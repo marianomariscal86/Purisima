@@ -1,5 +1,5 @@
 /* =====================================================================
-   HACIENDA LA PURÍSIMA — Lógica de la aplicación
+   LA PURÍSIMA — Lógica de la aplicación
 ===================================================================== */
 (function(){
 "use strict";
@@ -12,7 +12,13 @@ if(!cfg.SUPABASE_URL || cfg.SUPABASE_URL.includes("TU-PROYECTO")){
 const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
 
 // ---- Estado ----
-const state = { user:null, role:null, tasa:null, empresa:null, lotes:[], citas:[] };
+const state = {
+  user:null, role:null, tasa:null, empresa:null,
+  lotes:[], citas:[], ejecutivos:[], horarios:[],
+  miEjecutivo:null // registro de "ejecutivos" ligado al usuario actual (si es ventas)
+};
+
+const DIAS = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
 
 // ---- Utilidades ----
 const $  = s => document.querySelector(s);
@@ -20,12 +26,18 @@ const $$ = s => Array.from(document.querySelectorAll(s));
 const money = n => "$" + (Number(n)||0).toLocaleString("es-MX",{minimumFractionDigits:2,maximumFractionDigits:2});
 const parseMoney = s => Number(String(s).replace(/[^0-9.]/g,"")) || 0;
 const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const hhmm = t => String(t||"").slice(0,5);
 
 function imprimirHTML(html){
-  const w = window.open("", "_blank");
-  if(!w){ alert("Permite las ventanas emergentes para exportar el PDF."); return; }
-  w.document.open(); w.document.write(html); w.document.close();
-  w.onload = () => { w.focus(); w.print(); };
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const w = window.open(url, "_blank");
+  if(!w){ alert("Permite las ventanas emergentes para exportar el PDF."); URL.revokeObjectURL(url); return; }
+  w.addEventListener("load", () => {
+    w.focus();
+    w.print();
+    setTimeout(()=> URL.revokeObjectURL(url), 60000);
+  });
 }
 
 // =====================================================================
@@ -61,6 +73,19 @@ async function iniciarSesion(user){
   $$(".admin-only").forEach(el => el.hidden = !esAdmin);
   await cargarDatos();
   $("#ctFecha").value = new Date().toISOString().slice(0,10);
+  $("#citaFecha").value = new Date().toISOString().slice(0,10);
+  ajustarVisibilidadCitas();
+  await intentarActualizarTiieSiViejo();
+}
+
+// Ajusta qué tarjetas de Citas se ven según el rol:
+// ventas -> solo su disponibilidad; marketing/admin -> solo agendar (admin ve ambas)
+function ajustarVisibilidadCitas(){
+  const esAdmin = state.role === "admin";
+  const esVentas = state.role === "ventas";
+  const esMarketing = state.role === "marketing";
+  $("#cardDisponibilidad").hidden = !(esAdmin || esVentas);
+  $("#cardAgendar").hidden = !(esAdmin || esMarketing);
 }
 
 // =====================================================================
@@ -78,14 +103,19 @@ $("#tabs").addEventListener("click", (e)=>{
 //  CARGA DE DATOS
 // =====================================================================
 async function cargarDatos(){
-  const [tasa, lotes] = await Promise.all([
+  const [tasa, lotes, ejecutivos] = await Promise.all([
     sb.from("tasa_config").select("*").eq("id",1).single(),
-    sb.from("lotes").select("*").order("manzana").order("lote")
+    sb.from("lotes").select("*").order("manzana").order("lote"),
+    sb.from("ejecutivos").select("*").order("nombre")
   ]);
   state.tasa  = tasa.data || {tiie:6.76, puntos:8, enganche_pct:20};
   state.lotes = lotes.data || [];
+  state.ejecutivos = ejecutivos.data || [];
+  state.miEjecutivo = state.ejecutivos.find(e => e.user_id === state.user.id) || null;
+
   $("#puntosLbl").textContent = state.tasa.puntos;
   $("#calcEnganche").value = state.tasa.enganche_pct;
+  renderTiieAjustes();
 
   // empresa (todos la leen; solo admin la edita)
   const emp = await sb.from("empresa_config").select("*").eq("id",1).single();
@@ -94,7 +124,10 @@ async function cargarDatos(){
   llenarSelectLotes();
   renderLotes();
   renderAjustes();
+  renderEjecutivosSelects();
+  await cargarHorarios();
   await cargarCitas();
+  renderEjecutivosTabla();
 }
 
 function lotesDisponibles(){ return state.lotes.filter(l => l.estatus === "disponible"); }
@@ -109,11 +142,20 @@ function llenarSelectLotes(){
     .concat(state.lotes.map(l =>
       `<option value="${l.id}">Mz ${esc(l.manzana)} · Lote ${esc(l.lote)} — ${esc(l.estatus)}</option>`));
   $("#ctLote").innerHTML = optsTodos.join("");
+}
 
-  const optsCita = ['<option value="">— Opcional —</option>']
-    .concat(lotesDisponibles().map(l =>
-      `<option value="${l.id}">Mz ${esc(l.manzana)} · Lote ${esc(l.lote)}</option>`));
-  $("#citaLote").innerHTML = optsCita.join("");
+function renderEjecutivosSelects(){
+  const activos = state.ejecutivos.filter(e=>e.activo);
+  const opts = ['<option value="">— Elegir ejecutivo —</option>']
+    .concat(activos.map(e=>`<option value="${e.id}">${esc(e.nombre)}</option>`));
+  $("#citaEjecutivo").innerHTML = opts.join("");
+
+  // Selector de admin para ver/editar el horario de cualquier ejecutivo
+  const optsAdmin = activos.map(e=>`<option value="${e.id}">${esc(e.nombre)}</option>`);
+  $("#dispEjecutivoSelect").innerHTML = optsAdmin.join("") || '<option value="">Sin ejecutivos</option>';
+  if(state.miEjecutivo){
+    $("#dispEjecutivoSelect").value = state.miEjecutivo.id;
+  }
 }
 
 // =====================================================================
@@ -168,13 +210,13 @@ $("#calcBtn").addEventListener("click", ()=>{
   plazos.forEach(n=>{
     const cuota = i > 0 ? financiar * i / (1 - Math.pow(1+i, -n)) : financiar / n;
     const total = cuota * n;
-    rows += `<tr><td class="plazo">${n} meses</td><td class="mens">${money(cuota)}</td><td>${money(total)}</td></tr>`;
+    rows += `<tr><td class="plazo">${n} meses</td><td class="mens">${money(cuota)}</td></tr>`;
     filasPDF.push({n, cuota, total});
   });
 
   $("#calcResultado").innerHTML = `
     <table class="cuotas">
-      <thead><tr><th>Plazo</th><th>Mensualidad</th><th>Total a pagar</th></tr></thead>
+      <thead><tr><th>Plazo</th><th>Mensualidad</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <p class="hint">Monto a financiar ${money(financiar)} · tasa anual ${(tasaAnual*100).toFixed(2)}% (TIIE ${state.tasa.tiie}% + ${state.tasa.puntos}).</p>`;
@@ -188,29 +230,23 @@ function exportarCotizacion(d){
   const manzana = $("#calcManzana").value || "—";
   const loteNum = $("#calcLoteNum").value || "Por definir";
   const hoy = new Date().toLocaleDateString("es-MX",{day:"2-digit",month:"long",year:"numeric"});
-  const filas = d.filasPDF.map(f=>`<tr><td>${f.n} meses</td><td style="text-align:right">${money(f.cuota)}</td><td style="text-align:right">${money(f.total)}</td></tr>`).join("");
-  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Cotización La Purísima</title>
+  const filas = d.filasPDF.map(f=>`<tr><td>${f.n} meses</td><td style="text-align:right">${money(f.cuota)}</td></tr>`).join("");
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Cotización</title>
   <style>
     @page{size:Letter;margin:2cm}
     body{font-family:Arial,Helvetica,sans-serif;color:#292420;margin:0}
-    .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #213d2e;padding-bottom:14px;margin-bottom:22px}
-    .brand{font-family:Georgia,serif;font-size:26px;color:#213d2e;font-weight:bold;line-height:1}
-    .eyebrow{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#a8842c;font-weight:bold}
-    .meta{text-align:right;font-size:12px;color:#6e6557}
+    .meta{text-align:right;font-size:12px;color:#6e6557;margin-bottom:18px}
     h2{font-size:13px;text-transform:uppercase;letter-spacing:1px;color:#a8842c;margin:22px 0 8px}
     .box{background:#f6f2e9;border:1px solid #dcd4c6;border-radius:8px;padding:14px 16px;font-size:14px}
     .box div{margin-bottom:5px}
     table{width:100%;border-collapse:collapse;margin-top:6px;font-size:14px}
     th,td{padding:9px 8px;border-bottom:1px solid #dcd4c6}
     th{background:#213d2e;color:#fff;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
-    th:nth-child(2),th:nth-child(3){text-align:right}
+    th:nth-child(2){text-align:right}
     .foot{margin-top:24px;font-size:10px;color:#6e6557;border-top:1px solid #dcd4c6;padding-top:12px}
     .grand{font-weight:bold;color:#213d2e}
   </style></head><body>
-  <div class="head">
-    <div><div class="eyebrow">Fraccionamiento Residencial Turístico</div><div class="brand">Hacienda La Purísima</div></div>
-    <div class="meta">Cotización<br>${hoy}</div>
-  </div>
+  <div class="meta">${hoy}</div>
   <h2>Datos de la cotización</h2>
   <div class="box">
     <div><b>Cliente:</b> ${esc(cliente)}</div>
@@ -220,7 +256,7 @@ function exportarCotizacion(d){
     <div class="grand"><b>Monto a financiar:</b> ${money(d.financiar)}</div>
   </div>
   <h2>Opciones de financiamiento (pagos iguales)</h2>
-  <table><thead><tr><th>Plazo</th><th>Mensualidad</th><th>Total a pagar</th></tr></thead><tbody>${filas}</tbody></table>
+  <table><thead><tr><th>Plazo</th><th>Mensualidad</th></tr></thead><tbody>${filas}</tbody></table>
   <div class="foot">
     Tasa anual estimada ${(d.tasaAnual*100).toFixed(2)}% (TIIE ${state.tasa.tiie}% + ${state.tasa.puntos} puntos), sobre saldos insolutos.
     Estimación con tasa fija al valor de TIIE vigente; el contrato pacta tasa <b>variable</b>, ajustada mensualmente conforme a la TIIE publicada por Banco de México. No constituye oferta vinculante. Sujeta a disponibilidad y aprobación.
@@ -244,6 +280,7 @@ function renderLotes(){
       <td style="text-align:right">${Number(l.superficie_m2).toLocaleString("es-MX")}</td>
       <td style="text-align:right">${money(l.precio)}</td>
       <td><span class="pill ${esc(l.estatus)}">${esc(l.estatus)}</span></td>
+      <td>${l.plano_recorte ? '<span class="hint">✓ '+esc(l.plano_recorte)+'</span>' : '<span class="hint">— sin asignar</span>'}</td>
       ${esAdmin ? `<td><button class="btn-mini" data-edit="${l.id}">Editar</button></td>` : ``}
     </tr>`).join("");
 }
@@ -265,6 +302,7 @@ function editarLote(l){
     <td><select data-f="estatus">
       ${["disponible","apartado","vendido"].map(s=>`<option ${s===l.estatus?"selected":""}>${s}</option>`).join("")}
     </select></td>
+    <td><input value="${esc(l.plano_recorte||"")}" data-f="plano_recorte" placeholder="archivo.jpg" style="width:120px"></td>
     <td><button class="btn-mini" data-save="${l.id}">Guardar</button></td>`;
   tr.querySelector("[data-save]").addEventListener("click", ()=>guardarLote(l.id, tr));
 }
@@ -293,35 +331,138 @@ $("#nuevoLoteBtn").addEventListener("click", ()=>{
     <td><input data-f="superficie_m2" style="width:70px" placeholder="m²"></td>
     <td><input data-f="precio" style="width:110px" placeholder="Precio"></td>
     <td><select data-f="estatus"><option>disponible</option><option>apartado</option><option>vendido</option></select></td>
+    <td><input data-f="plano_recorte" placeholder="archivo.jpg" style="width:120px"></td>
     <td><button class="btn-mini" data-save="nuevo">Guardar</button></td>`;
   tbody.prepend(tr);
   tr.querySelector("[data-save]").addEventListener("click", ()=>guardarLote("nuevo", tr));
 });
 
 // =====================================================================
-//  CITAS
+//  CITAS — DISPONIBILIDAD (ventas) Y AGENDA (marketing/admin)
 // =====================================================================
+async function cargarHorarios(){
+  const { data } = await sb.from("horarios_disponibilidad").select("*").eq("activo", true)
+    .order("dia_semana").order("hora_inicio");
+  state.horarios = data || [];
+  renderDisponibilidad();
+}
+
+function ejecutivoActivoParaDisponibilidad(){
+  // admin puede elegir cualquier ejecutivo desde el select; ventas siempre ve el suyo
+  if(state.role === "admin"){
+    const id = $("#dispEjecutivoSelect").value;
+    return state.ejecutivos.find(e=>String(e.id)===String(id)) || null;
+  }
+  return state.miEjecutivo;
+}
+
+function renderDisponibilidad(){
+  const ej = ejecutivoActivoParaDisponibilidad();
+  if(!ej){
+    $("#dispEjecutivoHint").textContent = state.role === "ventas"
+      ? "Tu usuario aún no está ligado a un ejecutivo. Pide al admin que te ligue desde Ajustes."
+      : "Selecciona un ejecutivo para ver/editar su horario.";
+    $("#dispTable tbody").innerHTML = "";
+    return;
+  }
+  $("#dispEjecutivoHint").textContent = "Mostrando horario de: " + ej.nombre;
+  const propios = state.horarios.filter(h => h.ejecutivo_id === ej.id);
+  const tbody = $("#dispTable tbody");
+  if(!propios.length){ tbody.innerHTML = `<tr><td colspan="4" style="color:#6e6557">Sin horarios publicados.</td></tr>`; return; }
+  tbody.innerHTML = propios.map(h=>`
+    <tr>
+      <td>${DIAS[h.dia_semana]}</td>
+      <td>${hhmm(h.hora_inicio)}</td>
+      <td>${hhmm(h.hora_fin)}</td>
+      <td><button class="btn-mini" data-quitar="${h.id}">Quitar</button></td>
+    </tr>`).join("");
+}
+
+$("#dispEjecutivoSelect").addEventListener("change", renderDisponibilidad);
+
+$("#dispAddBtn").addEventListener("click", async ()=>{
+  const ej = ejecutivoActivoParaDisponibilidad();
+  if(!ej){ $("#dispMsg").textContent = "No hay ejecutivo seleccionado."; return; }
+  const obj = {
+    ejecutivo_id: ej.id,
+    dia_semana: Number($("#dispDia").value),
+    hora_inicio: $("#dispInicio").value,
+    hora_fin: $("#dispFin").value,
+    created_by: state.user.id
+  };
+  if(obj.hora_fin <= obj.hora_inicio){ $("#dispMsg").textContent = "La hora fin debe ser mayor a la hora inicio."; return; }
+  const { error } = await sb.from("horarios_disponibilidad").insert(obj);
+  $("#dispMsg").textContent = error ? ("Error: " + error.message) : "Horario agregado.";
+  if(!error) await cargarHorarios();
+});
+
+$("#dispTable").addEventListener("click", async (e)=>{
+  const b = e.target.closest("[data-quitar]"); if(!b) return;
+  const { error } = await sb.from("horarios_disponibilidad").update({activo:false}).eq("id", b.dataset.quitar);
+  if(error){ alert("No se pudo quitar: " + error.message); return; }
+  await cargarHorarios();
+});
+
+// ---- Generación de slots de 2 horas disponibles para agendar ----
+function slotsDelDia(ejecutivoId, fechaStr){
+  // fechaStr en formato YYYY-MM-DD
+  const fecha = new Date(fechaStr + "T00:00:00");
+  const diaSemana = fecha.getDay();
+  const bloques = state.horarios.filter(h => h.ejecutivo_id === Number(ejecutivoId) && h.dia_semana === diaSemana);
+  const ocupadas = state.citas.filter(c => c.ejecutivo_id === Number(ejecutivoId) && c.fecha === fechaStr && c.estatus !== "cancelada");
+
+  const slots = [];
+  bloques.forEach(b=>{
+    let [h,m] = b.hora_inicio.split(":").map(Number);
+    const [hf,mf] = b.hora_fin.split(":").map(Number);
+    let actual = h*60+m;
+    const fin = hf*60+mf;
+    while(actual + 120 <= fin){
+      const ini = actual, term = actual + 120;
+      const iniStr = String(Math.floor(ini/60)).padStart(2,"0") + ":" + String(ini%60).padStart(2,"0");
+      const termStr = String(Math.floor(term/60)).padStart(2,"0") + ":" + String(term%60).padStart(2,"0");
+      const choca = ocupadas.some(c => !(termStr <= hhmm(c.hora_inicio) || iniStr >= hhmm(c.hora_fin)));
+      if(!choca) slots.push({inicio: iniStr, fin: termStr});
+      actual += 120;
+    }
+  });
+  return slots;
+}
+
+function actualizarSlotsCita(){
+  const ejId = $("#citaEjecutivo").value;
+  const fecha = $("#citaFecha").value;
+  const sel = $("#citaSlot");
+  if(!ejId || !fecha){ sel.innerHTML = '<option value="">— Elige fecha y ejecutivo primero —</option>'; return; }
+  const slots = slotsDelDia(ejId, fecha);
+  if(!slots.length){ sel.innerHTML = '<option value="">Sin horarios disponibles ese día</option>'; return; }
+  sel.innerHTML = slots.map(s=>`<option value="${s.inicio}|${s.fin}">${s.inicio} – ${s.fin}</option>`).join("");
+}
+$("#citaEjecutivo").addEventListener("change", actualizarSlotsCita);
+$("#citaFecha").addEventListener("change", actualizarSlotsCita);
+
 async function cargarCitas(){
-  const { data } = await sb.from("citas").select("*").order("fecha_hora",{ascending:true});
+  const { data } = await sb.from("citas").select("*").order("fecha",{ascending:true}).order("hora_inicio",{ascending:true});
   state.citas = data || [];
   renderCitas();
+  actualizarSlotsCita();
 }
 
 function renderCitas(){
   const tbody = $("#citasTable tbody");
   if(!state.citas.length){ tbody.innerHTML = `<tr><td colspan="5" style="color:#6e6557">Sin citas agendadas.</td></tr>`; return; }
   tbody.innerHTML = state.citas.map(c=>{
-    const l = state.lotes.find(x=>x.id===c.lote_id);
-    const fecha = new Date(c.fecha_hora).toLocaleString("es-MX",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});
+    const ej = state.ejecutivos.find(x=>x.id===c.ejecutivo_id);
+    const fecha = new Date(c.fecha + "T00:00:00").toLocaleDateString("es-MX",{day:"2-digit",month:"short"});
     const puede = (c.created_by === state.user.id) || state.role === "admin";
     const sel = puede
       ? `<select data-cita="${c.id}">${["agendada","confirmada","realizada","cancelada","no_asistio"].map(s=>`<option ${s===c.estatus?"selected":""}>${s}</option>`).join("")}</select>`
       : esc(c.estatus);
     return `<tr>
       <td>${fecha}</td>
+      <td>${hhmm(c.hora_inicio)}–${hhmm(c.hora_fin)}</td>
       <td>${esc(c.cliente_nombre)}<br><span class="hint">${esc(c.origen)}</span></td>
-      <td>${l?`Mz ${esc(l.manzana)}·L${esc(l.lote)}`:"—"}</td>
-      <td>${esc(c.asesor)}</td>
+      <td>${ej?esc(ej.nombre):"—"}</td>
       <td>${sel}</td>
     </tr>`;
   }).join("");
@@ -329,29 +470,41 @@ function renderCitas(){
     s.addEventListener("change", async ()=>{
       const { error } = await sb.from("citas").update({estatus:s.value}).eq("id", s.dataset.cita);
       if(error) alert("No se pudo actualizar: " + error.message);
+      else await cargarCitas();
     });
   });
 }
 
 $("#citaBtn").addEventListener("click", async ()=>{
   const nombre = $("#citaNombre").value.trim();
-  const fecha  = $("#citaFecha").value;
-  if(!nombre || !fecha){ $("#citaMsg").textContent = "Captura al menos el cliente y la fecha/hora."; return; }
+  const ejId = $("#citaEjecutivo").value;
+  const fecha = $("#citaFecha").value;
+  const slot = $("#citaSlot").value;
+  if(!nombre || !ejId || !fecha || !slot){
+    $("#citaMsg").textContent = "Completa cliente, ejecutivo, fecha y horario."; return;
+  }
+  const [hi, hf] = slot.split("|");
   const obj = {
     cliente_nombre: nombre,
     cliente_telefono: $("#citaTel").value.trim(),
     cliente_correo: $("#citaCorreo").value.trim(),
-    fecha_hora: new Date(fecha).toISOString(),
-    lote_id: $("#citaLote").value ? Number($("#citaLote").value) : null,
-    asesor: $("#citaAsesor").value.trim(),
+    ejecutivo_id: Number(ejId),
+    fecha: fecha,
+    hora_inicio: hi,
+    hora_fin: hf,
     origen: $("#citaOrigen").value,
     notas: $("#citaNotas").value.trim(),
     created_by: state.user.id
   };
   const { error } = await sb.from("citas").insert(obj);
-  if(error){ $("#citaMsg").textContent = "Error: " + error.message; return; }
+  if(error){
+    $("#citaMsg").textContent = error.message.includes("no_traslape_citas")
+      ? "Ese horario ya se ocupó, elige otro."
+      : "Error: " + error.message;
+    return;
+  }
   $("#citaMsg").textContent = "Cita agendada.";
-  ["#citaNombre","#citaTel","#citaCorreo","#citaFecha","#citaAsesor","#citaNotas"].forEach(s=>$(s).value="");
+  ["#citaNombre","#citaTel","#citaCorreo","#citaNotas"].forEach(s=>$(s).value="");
   await cargarCitas();
 });
 
@@ -364,11 +517,14 @@ $("#ctLote").addEventListener("change", ()=>{
     $("#ctManzana").value = l.manzana;
     $("#ctLoteNum").value = l.lote;
     $("#ctCalle").value   = l.calle;
-    $("#ctSup").value     = l.superficie_m2;
+    $("#ctSup").value     = l.superficie_m2;   // siempre del inventario, solo lectura
     $("#ctPrecio").value  = Number(l.precio).toFixed(2);
+    $("#ctVerPlanoBtn").disabled = false;
     if(l.estatus === "vendido"){
       $("#ctAviso").hidden = false; $("#ctAviso").textContent = "Atención: este lote está marcado como VENDIDO.";
     } else $("#ctAviso").hidden = true;
+  } else {
+    $("#ctVerPlanoBtn").disabled = true;
   }
   resumenContrato();
 });
@@ -406,9 +562,39 @@ $("#ctGenerarBtn").addEventListener("click", ()=>{
   imprimirHTML(construirContratoHTML(data));
 });
 
+// ---- Visor de plano de manzana ----
+$("#ctVerPlanoBtn").addEventListener("click", ()=>{
+  const l = state.lotes.find(x=>String(x.id)===$("#ctLote").value);
+  if(!l) return;
+  $("#planoTitulo").textContent = `Plano · Manzana ${l.manzana}, Lote ${l.lote}`;
+  const img = $("#planoImg"), sinImg = $("#planoSinImagen");
+  if(l.plano_recorte){
+    img.src = "planos/" + l.plano_recorte;
+    img.style.display = "block";
+    sinImg.textContent = "";
+  } else {
+    img.style.display = "none";
+    sinImg.textContent = "Todavía no se ha cargado el recorte del plano para esta manzana. Pide al admin que lo agregue en Lista de precios (campo plano_recorte) y suba la imagen a la carpeta /planos/.";
+  }
+  $("#planoModal").hidden = false;
+});
+$("#planoCerrarBtn").addEventListener("click", ()=> $("#planoModal").hidden = true);
+$("#planoModal").addEventListener("click", (e)=>{ if(e.target.id === "planoModal") $("#planoModal").hidden = true; });
+
 // =====================================================================
-//  AJUSTES (solo admin)
+//  AJUSTES (solo admin) — Tasa, empresa, TIIE automática, ejecutivos
 // =====================================================================
+function renderTiieAjustes(){
+  const t = state.tasa || {};
+  if(t.tiie_auto && t.tiie_fecha){
+    $("#tiieAutoHint").textContent = `TIIE actualizada automáticamente desde Banxico (publicación ${t.tiie_fecha}).`;
+  } else if(t.tiie_fecha){
+    $("#tiieAutoHint").textContent = `Último valor guardado manualmente.`;
+  } else {
+    $("#tiieAutoHint").textContent = `La TIIE se actualiza automáticamente desde Banxico.`;
+  }
+}
+
 function renderAjustes(){
   const t = state.tasa || {}, e = state.empresa || {};
   $("#setTiie").value = t.tiie; $("#setPuntos").value = t.puntos; $("#setEnganche").value = t.enganche_pct;
@@ -425,11 +611,46 @@ function renderAjustes(){
 
 $("#saveTasaBtn").addEventListener("click", async ()=>{
   const obj = { tiie: Number($("#setTiie").value), puntos: Number($("#setPuntos").value),
-                enganche_pct: Number($("#setEnganche").value), updated_at: new Date().toISOString() };
+                enganche_pct: Number($("#setEnganche").value), tiie_auto:false,
+                updated_at: new Date().toISOString() };
   const { error } = await sb.from("tasa_config").update(obj).eq("id",1);
   $("#tasaMsg").textContent = error ? ("Error: "+error.message) : "Guardado.";
   if(!error) await cargarDatos();
 });
+
+// Llama la Edge Function de Supabase que consulta Banxico y guarda la TIIE.
+async function actualizarTiieDesdeBanxico(){
+  const { data, error } = await sb.functions.invoke("tiie-fetch");
+  if(error) throw new Error(error.message || "No se pudo contactar la función de TIIE.");
+  if(data && data.error) throw new Error(data.error);
+  return data; // { ok, tiie, fecha }
+}
+
+$("#actualizarTiieBtn").addEventListener("click", async ()=>{
+  const btn = $("#actualizarTiieBtn");
+  btn.disabled = true; btn.textContent = "Consultando Banxico…";
+  try{
+    const r = await actualizarTiieDesdeBanxico();
+    $("#tasaMsg").textContent = `TIIE actualizada: ${r.tiie}% (publicación ${r.fecha}).`;
+    await cargarDatos();
+  }catch(err){
+    $("#tasaMsg").textContent = "No se pudo actualizar automáticamente: " + err.message;
+  }
+  btn.disabled = false; btn.textContent = "Actualizar TIIE ahora (Banxico)";
+});
+
+// Auto-actualiza la TIIE al iniciar sesión si el último dato tiene más de 1 día
+// (silencioso: si falla, simplemente se queda con el valor guardado).
+async function intentarActualizarTiieSiViejo(){
+  if(state.role !== "admin") return;
+  const t = state.tasa || {};
+  const horas = t.updated_at ? (Date.now() - new Date(t.updated_at).getTime()) / 36e5 : 999;
+  if(horas < 20) return; // ya está fresca
+  try{
+    await actualizarTiieDesdeBanxico();
+    await cargarDatos();
+  }catch(e){ /* silencioso: se queda con el valor manual existente */ }
+}
 
 $("#saveEmpresaBtn").addEventListener("click", async ()=>{
   const obj = {
@@ -444,6 +665,35 @@ $("#saveEmpresaBtn").addEventListener("click", async ()=>{
   const { error } = await sb.from("empresa_config").update(obj).eq("id",1);
   $("#empresaMsg").textContent = error ? ("Error: "+error.message) : "Guardado.";
   if(!error) state.empresa = {...state.empresa, ...obj};
+});
+
+// ---- Ejecutivos (alta desde Ajustes) ----
+function renderEjecutivosTabla(){
+  const tbody = $("#ejecutivosTable tbody");
+  if(!state.ejecutivos.length){ tbody.innerHTML = `<tr><td colspan="3" style="color:#6e6557">Sin ejecutivos.</td></tr>`; return; }
+  tbody.innerHTML = state.ejecutivos.map(e=>`
+    <tr>
+      <td>${esc(e.nombre)}</td>
+      <td>${e.user_id ? "Sí" : '<span class="hint">Sin ligar — pídele que inicie sesión y liga su correo en Supabase</span>'}</td>
+      <td><span class="pill ${e.activo?"disponible":"vendido"}">${e.activo?"activo":"inactivo"}</span></td>
+    </tr>`).join("");
+}
+
+$("#nuevoEjecutivoBtn").addEventListener("click", async ()=>{
+  const nombre = $("#nuevoEjecutivoNombre").value.trim();
+  if(!nombre){ $("#ejecutivoMsg").textContent = "Captura el nombre del ejecutivo."; return; }
+  const correo = $("#nuevoEjecutivoCorreo").value.trim();
+  let user_id = null;
+  if(correo){
+    const { data: perfil } = await sb.from("profiles").select("id").eq("email", correo).maybeSingle();
+    if(perfil) user_id = perfil.id;
+    else { $("#ejecutivoMsg").textContent = "Aviso: no encontré ese correo entre los usuarios ya creados; se guardó el ejecutivo sin ligar. Crea primero su usuario en Authentication."; }
+  }
+  const { error } = await sb.from("ejecutivos").insert({ nombre, user_id });
+  if(error){ $("#ejecutivoMsg").textContent = "Error: " + error.message; return; }
+  if(!$("#ejecutivoMsg").textContent) $("#ejecutivoMsg").textContent = "Ejecutivo agregado.";
+  $("#nuevoEjecutivoNombre").value = ""; $("#nuevoEjecutivoCorreo").value = "";
+  await cargarDatos();
 });
 
 })();
