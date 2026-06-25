@@ -1,0 +1,112 @@
+:root{
+  --pino:#213d2e;        /* verde bosque alto (pino/encino/ocote) */
+  --pino-700:#1a3024;
+  --cantera:#f1ece2;     /* fondo papel/cantera */
+  --marfil:#fcfaf5;      /* superficies */
+  --laton:#a8842c;       /* latón / oro hacienda (acento) */
+  --laton-soft:#c9a85a;
+  --tinta:#292420;       /* texto */
+  --piedra:#6e6557;      /* texto secundario */
+  --linea:#dcd4c6;       /* bordes suaves */
+  --ok:#2f6b46; --apartado:#9a6b1a; --vendido:#8a8378;
+  --error:#9b2d20;
+  --radius:10px;
+  --shadow:0 1px 2px rgba(41,36,32,.05), 0 8px 24px rgba(41,36,32,.06);
+  --serif:"Cormorant Garamond", Georgia, serif;
+  --sans:"Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:var(--sans);color:var(--tinta);background:var(--cantera);font-size:15px;line-height:1.5}
+h1,h2,h3{margin:0;font-weight:600}
+input,select,textarea,button{font-family:inherit;font-size:15px}
+button{cursor:pointer}
+a{color:var(--pino)}
+
+/* ---------- Botones ---------- */
+.btn{border:1px solid transparent;border-radius:8px;padding:.62rem 1.05rem;font-weight:600;transition:.15s ease;white-space:nowrap}
+.btn-primary{background:var(--pino);color:#fff;border-color:var(--pino)}
+.btn-primary:hover{background:var(--pino-700)}
+.btn-secondary{background:var(--laton);color:#fff;border-color:var(--laton)}
+.btn-secondary:hover{filter:brightness(.95)}
+.btn-ghost{background:transparent;color:var(--cantera);border-color:rgba(255,255,255,.35)}
+.btn-ghost:hover{background:rgba(255,255,255,.12)}
+.btn-mini{padding:.3rem .55rem;font-size:13px;border-radius:6px;border:1px solid var(--linea);background:var(--marfil);color:var(--tinta);font-weight:500}
+.btn-mini:hover{border-color:var(--laton)}
+
+/* ---------- Formularios ---------- */
+label{display:block;margin-bottom:.7rem;font-size:13px;font-weight:600;color:var(--piedra)}
+input,select,textarea{display:block;width:100%;margin-top:.28rem;padding:.55rem .65rem;border:1px solid var(--linea);
+  border-radius:8px;background:var(--marfil);color:var(--tinta);font-weight:500}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--pino);box-shadow:0 0 0 3px rgba(33,61,46,.12)}
+input[readonly]{background:#efeadf;color:var(--piedra)}
+.hint{font-size:12px;font-weight:500;color:var(--piedra)}
+.micro{font-size:11.5px;color:var(--piedra);margin:.6rem 0 0}
+.micro.warn{color:var(--error)}
+.error{color:var(--error);font-size:13px;min-height:1em;margin:.4rem 0 0}
+
+/* ====================== LOGIN ====================== */
+.login-wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.4rem;
+  background:radial-gradient(120% 120% at 50% -10%, #2c4d3a 0%, var(--pino) 45%, var(--pino-700) 100%);padding:1.5rem}
+.login-card{background:var(--marfil);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.3);padding:2.4rem 2.2rem;width:100%;max-width:380px;text-align:center}
+.crest{width:60px;height:60px;border-radius:50%;border:2px solid var(--laton);color:var(--laton);font-family:var(--serif);
+  font-weight:700;font-size:24px;display:grid;place-items:center;margin:0 auto 1rem;letter-spacing:1px}
+.eyebrow{font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--laton);margin:0 0 .35rem;font-weight:700}
+.brand{font-family:var(--serif);font-size:40px;line-height:.98;color:var(--pino);font-weight:700}
+.rule{width:46px;height:2px;background:var(--laton);margin:1rem auto}
+.login-sub{color:var(--piedra);font-size:13.5px;margin:0 0 1.4rem}
+.login-card form label{text-align:left}
+.login-card .btn{width:100%;margin-top:.4rem}
+.login-foot{color:rgba(255,255,255,.7);font-size:12px;letter-spacing:.04em}
+
+/* ====================== APP ====================== */
+.topbar{display:flex;align-items:center;gap:1rem;background:var(--pino);color:#fff;padding:.6rem 1.2rem;
+  position:sticky;top:0;z-index:20;flex-wrap:wrap}
+.topbar-brand{display:flex;align-items:center;gap:.6rem}
+.crest-sm{width:38px;height:38px;font-size:16px;margin:0;border-color:var(--laton-soft);color:#f3e6c4}
+.topbar-title{font-family:var(--serif);font-size:19px;font-weight:700;display:block;line-height:1.05}
+.topbar-sub{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.6)}
+.tabs{display:flex;gap:.2rem;margin:0 auto;flex-wrap:wrap}
+.tab{background:transparent;border:none;color:rgba(255,255,255,.78);padding:.5rem .85rem;border-radius:7px;font-weight:600;font-size:14px}
+.tab:hover{background:rgba(255,255,255,.1);color:#fff}
+.tab.is-active{background:var(--laton);color:#fff}
+.topbar-user{display:flex;align-items:center;gap:.6rem}
+.badge{font-size:11px;background:rgba(255,255,255,.14);padding:.28rem .6rem;border-radius:20px;letter-spacing:.04em}
+
+.content{max-width:1080px;margin:0 auto;padding:1.6rem 1.2rem 4rem}
+.panel-head{margin-bottom:1.1rem}
+.panel-head h2{font-family:var(--serif);font-size:30px;color:var(--pino);line-height:1}
+.panel-desc{color:var(--piedra);margin:.3rem 0 0;font-size:14px}
+.panel-head.row,.row{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+
+.card{background:var(--marfil);border:1px solid var(--linea);border-radius:var(--radius);padding:1.2rem 1.2rem 1.3rem;box-shadow:var(--shadow);margin-bottom:1.1rem}
+.card-title{font-size:13px;text-transform:uppercase;letter-spacing:.12em;color:var(--laton);font-weight:700;
+  padding-bottom:.55rem;border-bottom:1px solid var(--linea);margin-bottom:.9rem}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:1.1rem}
+.grid-2.tight{gap:.7rem}
+@media(max-width:760px){.grid-2{grid-template-columns:1fr}}
+
+/* Resultado calculadora */
+.card-result{display:flex;flex-direction:column}
+.result-empty{color:var(--piedra);padding:1.2rem 0;text-align:center;font-size:14px}
+.cuotas{width:100%;border-collapse:collapse;margin-bottom:.4rem}
+.cuotas th,.cuotas td{padding:.55rem .4rem;text-align:right;border-bottom:1px solid var(--linea);font-variant-numeric:tabular-nums}
+.cuotas th{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--piedra);text-align:right}
+.cuotas th:first-child,.cuotas td:first-child{text-align:left}
+.cuotas .plazo{font-weight:700;color:var(--pino)}
+.cuotas .mens{font-weight:700;font-size:16px}
+
+/* Tablas de datos */
+.table-wrap{overflow-x:auto;border:1px solid var(--linea);border-radius:var(--radius);background:var(--marfil)}
+.data-table{width:100%;border-collapse:collapse;min-width:560px}
+.data-table th{background:#ebe5d8;color:var(--piedra);font-size:11px;text-transform:uppercase;letter-spacing:.08em;
+  text-align:left;padding:.6rem .7rem;border-bottom:1px solid var(--linea)}
+.data-table td{padding:.55rem .7rem;border-bottom:1px solid var(--linea);font-variant-numeric:tabular-nums}
+.data-table tr:last-child td{border-bottom:none}
+.data-table tr:hover td{background:#f6f2e9}
+.pill{font-size:11px;font-weight:700;padding:.2rem .55rem;border-radius:20px;text-transform:capitalize;display:inline-block}
+.pill.disponible{background:#e2efe7;color:var(--ok)}
+.pill.apartado{background:#f6ebd4;color:var(--apartado)}
+.pill.vendido{background:#ececea;color:var(--vendido)}
+
+.editrow input,.editrow select{margin:0}
