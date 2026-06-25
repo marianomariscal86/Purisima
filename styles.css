@@ -45,6 +45,8 @@ input[readonly]{background:#efeadf;color:var(--piedra)}
 .micro.warn{color:var(--error)}
 .error{color:var(--error);font-size:13px;min-height:1em;margin:.4rem 0 0}
 
+[hidden]{display:none !important}
+
 /* ====================== LOGIN ====================== */
 .login-wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.4rem;
   background:radial-gradient(120% 120% at 50% -10%, #2c4d3a 0%, var(--pino) 45%, var(--pino-700) 100%);padding:1.5rem}
