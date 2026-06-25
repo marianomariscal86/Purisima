@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Hacienda La Purísima · Ventas</title>
+<title>La Purísima · Ventas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -14,9 +14,9 @@
 <!-- ===================== PANTALLA DE ACCESO ===================== -->
 <div id="login" class="login-wrap">
   <div class="login-card">
-    <div class="crest">LP</div>
+    <img src="assets/logo_arbol.png" alt="La Purísima" class="crest-logo">
     <p class="eyebrow">Fraccionamiento Residencial Turístico</p>
-    <h1 class="brand">Hacienda<br>La Purísima</h1>
+    <h1 class="brand">La Purísima</h1>
     <div class="rule"></div>
     <p class="login-sub">Acceso para el equipo de ventas y marketing</p>
     <form id="loginForm" autocomplete="on">
@@ -37,9 +37,9 @@
 <div id="app" class="app" hidden>
   <header class="topbar">
     <div class="topbar-brand">
-      <span class="crest crest-sm">LP</span>
+      <img src="assets/logo_arbol.png" alt="La Purísima" class="crest-logo-sm">
       <div>
-        <span class="topbar-title">Hacienda La Purísima</span>
+        <span class="topbar-title">La Purísima</span>
         <span class="topbar-sub">Plataforma de ventas</span>
       </div>
     </div>
@@ -112,7 +112,7 @@
           <thead>
             <tr>
               <th>Mz</th><th>Lote</th><th>Calle</th><th>Sup. (m²)</th>
-              <th>Precio</th><th>Estatus</th><th class="admin-only" hidden>Acciones</th>
+              <th>Precio</th><th>Estatus</th><th>Plano</th><th class="admin-only" hidden>Acciones</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -124,24 +124,53 @@
     <section id="tab-citas" class="panel" hidden>
       <div class="panel-head">
         <h2>Citas con clientes</h2>
-        <p class="panel-desc">Agenda de ventas y marketing.</p>
+        <p class="panel-desc">Ventas publica su disponibilidad · Marketing agenda citas de 2 horas dentro de esos horarios.</p>
       </div>
+
       <div class="grid-2">
-        <div class="card">
+        <!-- Disponibilidad: ventas sube/edita su horario semanal -->
+        <div class="card" id="cardDisponibilidad">
+          <h3 class="card-title">Mi disponibilidad semanal</h3>
+          <p class="hint" id="dispEjecutivoHint"></p>
+          <div class="grid-2 tight">
+            <label>Día <select id="dispDia">
+              <option value="1">Lunes</option><option value="2">Martes</option><option value="3">Miércoles</option>
+              <option value="4">Jueves</option><option value="5">Viernes</option><option value="6">Sábado</option>
+              <option value="0">Domingo</option>
+            </select></label>
+            <label>&nbsp;</label>
+          </div>
+          <div class="grid-2 tight">
+            <label>Hora inicio <input type="time" id="dispInicio" value="09:00"></label>
+            <label>Hora fin <input type="time" id="dispFin" value="13:00"></label>
+          </div>
+          <button class="btn btn-primary" id="dispAddBtn">+ Agregar horario</button>
+          <p id="dispMsg" class="hint"></p>
+          <div class="table-wrap" style="margin-top:.8rem">
+            <table class="data-table" id="dispTable">
+              <thead><tr><th>Día</th><th>De</th><th>A</th><th>Quitar</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="micro">Admin: usa el selector de ejecutivo abajo para administrar el horario de cualquiera.</p>
+          <label class="admin-only" hidden style="margin-top:.6rem">Ver/editar horario de
+            <select id="dispEjecutivoSelect"></select>
+          </label>
+        </div>
+
+        <!-- Agendar cita: marketing y admin -->
+        <div class="card" id="cardAgendar">
           <h3 class="card-title">Agendar cita</h3>
+          <label>Ejecutivo de ventas
+            <select id="citaEjecutivo"><option value="">— Elegir ejecutivo —</option></select>
+          </label>
           <label>Cliente <input type="text" id="citaNombre" placeholder="Nombre del cliente"></label>
           <div class="grid-2 tight">
             <label>Teléfono <input type="text" id="citaTel" placeholder="55 1234 5678"></label>
             <label>Correo <input type="email" id="citaCorreo" placeholder="cliente@correo.com"></label>
           </div>
           <div class="grid-2 tight">
-            <label>Fecha y hora <input type="datetime-local" id="citaFecha"></label>
-            <label>Asesor <input type="text" id="citaAsesor" placeholder="Quién atiende"></label>
-          </div>
-          <div class="grid-2 tight">
-            <label>Lote de interés
-              <select id="citaLote"><option value="">— Opcional —</option></select>
-            </label>
+            <label>Fecha <input type="date" id="citaFecha"></label>
             <label>Origen
               <select id="citaOrigen">
                 <option value="directo">Directo</option>
@@ -152,18 +181,22 @@
               </select>
             </label>
           </div>
+          <label>Horario disponible (2 horas)
+            <select id="citaSlot"><option value="">— Elige fecha y ejecutivo primero —</option></select>
+          </label>
           <label>Notas <textarea id="citaNotas" rows="2" placeholder="Comentarios"></textarea></label>
           <button class="btn btn-primary" id="citaBtn">Agendar cita</button>
           <p id="citaMsg" class="hint"></p>
         </div>
-        <div class="card">
-          <h3 class="card-title">Próximas citas</h3>
-          <div class="table-wrap">
-            <table class="data-table" id="citasTable">
-              <thead><tr><th>Fecha</th><th>Cliente</th><th>Lote</th><th>Asesor</th><th>Estatus</th></tr></thead>
-              <tbody></tbody>
-            </table>
-          </div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Próximas citas</h3>
+        <div class="table-wrap">
+          <table class="data-table" id="citasTable">
+            <thead><tr><th>Fecha</th><th>Horario</th><th>Cliente</th><th>Ejecutivo</th><th>Estatus</th></tr></thead>
+            <tbody></tbody>
+          </table>
         </div>
       </div>
     </section>
@@ -185,11 +218,13 @@
             <label>Lote <input type="text" id="ctLoteNum" readonly></label>
           </div>
           <div class="grid-2 tight">
-            <label>Calle <input type="text" id="ctCalle"></label>
-            <label>Superficie (m²) <input type="text" id="ctSup"></label>
+            <label>Calle <input type="text" id="ctCalle" readonly></label>
+            <label>Superficie (m²) <input type="text" id="ctSup" readonly></label>
           </div>
+          <p class="hint" id="ctSupHint">La superficie se toma directo del inventario (lista de precios) y no es editable aquí.</p>
           <label>Precio total (MXN) <input type="text" id="ctPrecio" inputmode="numeric"></label>
           <label>Fecha de firma <input type="date" id="ctFecha"></label>
+          <button class="btn btn-secondary" id="ctVerPlanoBtn" type="button" disabled>Ver plano de esta manzana</button>
         </div>
         <div class="card">
           <h3 class="card-title">La Promitente Compradora</h3>
@@ -220,11 +255,13 @@
       <div class="grid-2">
         <div class="card">
           <h3 class="card-title">Tasa y enganche</h3>
+          <p class="hint" id="tiieAutoHint">La TIIE se actualiza automáticamente desde Banxico.</p>
           <div class="grid-2 tight">
             <label>TIIE 28 días (%) <input type="number" id="setTiie" step="0.0001"></label>
             <label>Puntos (+) <input type="number" id="setPuntos" step="0.01"></label>
           </div>
           <label>Enganche por defecto (%) <input type="number" id="setEnganche" step="1"></label>
+          <button class="btn btn-secondary" id="actualizarTiieBtn" type="button">Actualizar TIIE ahora (Banxico)</button>
           <button class="btn btn-primary" id="saveTasaBtn">Guardar tasa</button>
           <p id="tasaMsg" class="hint"></p>
         </div>
@@ -262,9 +299,39 @@
           <p id="empresaMsg" class="hint"></p>
         </div>
       </div>
+
+      <div class="card">
+        <h3 class="card-title">Ejecutivos de ventas</h3>
+        <div class="grid-2 tight">
+          <label>Nombre del nuevo ejecutivo <input type="text" id="nuevoEjecutivoNombre" placeholder="Nombre completo"></label>
+          <label>Correo del usuario a ligar (opcional)<input type="email" id="nuevoEjecutivoCorreo" placeholder="correo@ejemplo.com"></label>
+        </div>
+        <button class="btn btn-primary" id="nuevoEjecutivoBtn">+ Agregar ejecutivo</button>
+        <p id="ejecutivoMsg" class="hint"></p>
+        <div class="table-wrap" style="margin-top:.8rem">
+          <table class="data-table" id="ejecutivosTable">
+            <thead><tr><th>Nombre</th><th>Usuario ligado</th><th>Activo</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
   </main>
+</div>
+
+<!-- ===================== MODAL: PLANO DE MANZANA ===================== -->
+<div id="planoModal" class="modal-overlay" hidden>
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3 id="planoTitulo">Plano de la manzana</h3>
+      <button class="btn-mini" id="planoCerrarBtn">Cerrar ✕</button>
+    </div>
+    <div class="modal-body" id="planoBody">
+      <img id="planoImg" src="" alt="Plano de la manzana" style="display:none">
+      <p id="planoSinImagen" class="hint"></p>
+    </div>
+  </div>
 </div>
 
 <!-- Cliente de Supabase -->
