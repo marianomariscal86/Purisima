@@ -125,6 +125,7 @@ async function cargarDatos(){
   renderLotes();
   renderAjustes();
   renderEjecutivosSelects();
+  renderSelectorMasterplan();
   await cargarHorarios();
   await cargarCitas();
   renderEjecutivosTabla();
@@ -562,24 +563,56 @@ $("#ctGenerarBtn").addEventListener("click", ()=>{
   imprimirHTML(construirContratoHTML(data));
 });
 
-// ---- Visor de plano de manzana ----
+// ---- Botón "Ver plano" en Contrato → navega a la pestaña Masterplan con la manzana ya elegida ----
 $("#ctVerPlanoBtn").addEventListener("click", ()=>{
   const l = state.lotes.find(x=>String(x.id)===$("#ctLote").value);
   if(!l) return;
-  $("#planoTitulo").textContent = `Plano · Manzana ${l.manzana}, Lote ${l.lote}`;
-  const img = $("#planoImg"), sinImg = $("#planoSinImagen");
-  if(l.plano_recorte){
-    img.src = "planos/" + l.plano_recorte;
-    img.style.display = "block";
-    sinImg.textContent = "";
-  } else {
-    img.style.display = "none";
-    sinImg.textContent = "Todavía no se ha cargado el recorte del plano para esta manzana. Pide al admin que lo agregue en Lista de precios (campo plano_recorte) y suba la imagen a la carpeta /planos/.";
-  }
-  $("#planoModal").hidden = false;
+  irAMasterplan(l.manzana);
 });
-$("#planoCerrarBtn").addEventListener("click", ()=> $("#planoModal").hidden = true);
-$("#planoModal").addEventListener("click", (e)=>{ if(e.target.id === "planoModal") $("#planoModal").hidden = true; });
+
+// =====================================================================
+//  MASTERPLAN — módulo propio, disponible para cualquier rol logueado
+// =====================================================================
+function manzanasUnicas(){
+  const vistas = new Set();
+  const lista = [];
+  state.lotes.forEach(l=>{
+    if(!vistas.has(l.manzana)){ vistas.add(l.manzana); lista.push(l.manzana); }
+  });
+  return lista.sort((a,b)=> a.localeCompare(b, "es", {numeric:true}));
+}
+
+function renderSelectorMasterplan(){
+  const opts = ['<option value="">— Elegir manzana —</option>']
+    .concat(manzanasUnicas().map(m=>`<option value="${esc(m)}">Manzana ${esc(m)}</option>`));
+  $("#mpManzana").innerHTML = opts.join("");
+}
+
+function renderVisorMasterplan(manzana){
+  const visor = $("#mpVisor");
+  if(!manzana){
+    visor.innerHTML = '<p class="hint">Elige una manzana para ver su plano.</p>';
+    return;
+  }
+  const lote = state.lotes.find(l => l.manzana === manzana && l.plano_recorte);
+  if(lote){
+    visor.innerHTML = `<img src="planos/${esc(lote.plano_recorte)}" alt="Plano manzana ${esc(manzana)}">`;
+  } else {
+    visor.innerHTML = `<p class="hint">Todavía no se ha cargado el recorte del plano para la Manzana ${esc(manzana)}. El admin puede agregarlo desde Lista de precios (campo "Plano") subiendo la imagen a la carpeta /planos/.</p>`;
+  }
+}
+
+$("#mpManzana").addEventListener("change", ()=> renderVisorMasterplan($("#mpManzana").value));
+
+// Cambia a la pestaña Masterplan y preselecciona una manzana (usado desde Contrato).
+function irAMasterplan(manzana){
+  $$(".tab").forEach(t=>t.classList.remove("is-active"));
+  $(`.tab[data-tab="masterplan"]`).classList.add("is-active");
+  $$(".panel").forEach(p=>p.hidden = true);
+  $("#tab-masterplan").hidden = false;
+  $("#mpManzana").value = manzana;
+  renderVisorMasterplan(manzana);
+}
 
 // =====================================================================
 //  AJUSTES (solo admin) — Tasa, empresa, TIIE automática, ejecutivos
