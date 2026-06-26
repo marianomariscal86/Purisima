@@ -14,7 +14,7 @@ const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY)
 // ---- Estado ----
 const state = {
   user:null, role:null, tasa:null, empresa:null,
-  lotes:[], citas:[], ejecutivos:[], horarios:[],
+  lotes:[], citas:[], ejecutivos:[], horarios:[], excepciones:[],
   miEjecutivo:null // registro de "ejecutivos" ligado al usuario actual (si es ventas)
 };
 
@@ -339,13 +339,18 @@ $("#nuevoLoteBtn").addEventListener("click", ()=>{
 });
 
 // =====================================================================
-//  CITAS — DISPONIBILIDAD (ventas) Y AGENDA (marketing/admin)
+//  CITAS — DISPONIBILIDAD (calendario: recurrente + excepciones por fecha)
 // =====================================================================
+const calState = { weekOffset: 0, modo: "recurrente", selectedDate: null };
+
 async function cargarHorarios(){
-  const { data } = await sb.from("horarios_disponibilidad").select("*").eq("activo", true)
-    .order("dia_semana").order("hora_inicio");
-  state.horarios = data || [];
-  renderDisponibilidad();
+  const [hor, exc] = await Promise.all([
+    sb.from("horarios_disponibilidad").select("*").eq("activo", true).order("dia_semana").order("hora_inicio"),
+    sb.from("horarios_excepciones").select("*")
+  ]);
+  state.horarios = hor.data || [];
+  state.excepciones = exc.data || [];
+  renderCalendario();
 }
 
 function ejecutivoActivoParaDisponibilidad(){
@@ -357,59 +362,192 @@ function ejecutivoActivoParaDisponibilidad(){
   return state.miEjecutivo;
 }
 
-function renderDisponibilidad(){
+function lunesDeSemana(offset){
+  const d = new Date();
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1) + offset*7;
+  d.setDate(diff);
+  d.setHours(0,0,0,0);
+  return d;
+}
+function fechaISO(d){ return d.toISOString().slice(0,10); }
+
+function renderCalendario(){
   const ej = ejecutivoActivoParaDisponibilidad();
   if(!ej){
     $("#dispEjecutivoHint").textContent = state.role === "ventas"
       ? "Tu usuario aún no está ligado a un ejecutivo. Pide al admin que te ligue desde Ajustes."
       : "Selecciona un ejecutivo para ver/editar su horario.";
-    $("#dispTable tbody").innerHTML = "";
+    $("#calGrid").innerHTML = "";
+    $("#calPanel").innerHTML = '<p class="hint">Sin ejecutivo seleccionado.</p>';
     return;
   }
   $("#dispEjecutivoHint").textContent = "Mostrando horario de: " + ej.nombre;
-  const propios = state.horarios.filter(h => h.ejecutivo_id === ej.id);
-  const tbody = $("#dispTable tbody");
-  if(!propios.length){ tbody.innerHTML = `<tr><td colspan="4" style="color:#6e6557">Sin horarios publicados.</td></tr>`; return; }
-  tbody.innerHTML = propios.map(h=>`
-    <tr>
-      <td>${DIAS[h.dia_semana]}</td>
-      <td>${hhmm(h.hora_inicio)}</td>
-      <td>${hhmm(h.hora_fin)}</td>
-      <td><button class="btn-mini" data-quitar="${h.id}">Quitar</button></td>
-    </tr>`).join("");
+
+  const lunes = lunesDeSemana(calState.weekOffset);
+  const domingo = new Date(lunes); domingo.setDate(lunes.getDate()+6);
+  $("#calWeekLabel").textContent =
+    lunes.toLocaleDateString("es-MX",{day:"numeric",month:"short"}) + " – " +
+    domingo.toLocaleDateString("es-MX",{day:"numeric",month:"short"});
+
+  const recurrentePorDia = {};
+  state.horarios.filter(h=>h.ejecutivo_id===ej.id).forEach(h=>{
+    (recurrentePorDia[h.dia_semana] = recurrentePorDia[h.dia_semana] || []).push(h);
+  });
+  const excepcionesPorFecha = {};
+  state.excepciones.filter(x=>x.ejecutivo_id===ej.id).forEach(x=>{ excepcionesPorFecha[x.fecha] = x; });
+
+  const grid = $("#calGrid");
+  grid.innerHTML = "";
+  const diasOrden = [1,2,3,4,5,6,0]; // lunes..domingo
+  diasOrden.forEach((dow, idx)=>{
+    const date = new Date(lunes); date.setDate(lunes.getDate()+idx);
+    const iso = fechaISO(date);
+    const exc = excepcionesPorFecha[iso];
+    const rec = recurrentePorDia[dow];
+
+    let clase = "cal-day";
+    let hintTxt = "—";
+    if(exc){
+      if(exc.sin_disponibilidad){ clase += " sin-disponibilidad"; hintTxt = "Bloqueado"; }
+      else { clase += " has-especifico"; hintTxt = hhmm(exc.hora_inicio)+"–"+hhmm(exc.hora_fin); }
+    } else if(rec && rec.length){
+      clase += " has-recurrente"; hintTxt = hhmm(rec[0].hora_inicio)+"–"+hhmm(rec[0].hora_fin);
+    }
+    if(calState.selectedDate === iso) clase += " is-selected";
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = clase;
+    btn.innerHTML = `<span class="cal-day-name">${DIAS[dow].slice(0,3)}</span>
+      <span class="cal-day-num">${date.getDate()}</span>
+      <span class="cal-day-hint">${hintTxt}</span>`;
+    btn.addEventListener("click", ()=>{ calState.selectedDate = iso; calState.selectedDow = dow; renderCalendario(); });
+    grid.appendChild(btn);
+  });
+
+  renderPanelDia(ej);
 }
 
-$("#dispEjecutivoSelect").addEventListener("change", renderDisponibilidad);
+function renderPanelDia(ej){
+  const panel = $("#calPanel");
+  if(!calState.selectedDate){
+    panel.innerHTML = '<p class="hint">Elige un día del calendario para agregar o quitar disponibilidad.</p>';
+    return;
+  }
+  const dow = calState.selectedDow;
+  const iso = calState.selectedDate;
+  const dateObj = new Date(iso+"T00:00:00");
+  const labelFecha = DIAS[dow] + " " + dateObj.getDate() + " de " + dateObj.toLocaleDateString("es-MX",{month:"long",year:"numeric"});
 
-$("#dispAddBtn").addEventListener("click", async ()=>{
-  const ej = ejecutivoActivoParaDisponibilidad();
-  if(!ej){ $("#dispMsg").textContent = "No hay ejecutivo seleccionado."; return; }
-  const obj = {
-    ejecutivo_id: ej.id,
-    dia_semana: Number($("#dispDia").value),
-    hora_inicio: $("#dispInicio").value,
-    hora_fin: $("#dispFin").value,
-    created_by: state.user.id
-  };
-  if(obj.hora_fin <= obj.hora_inicio){ $("#dispMsg").textContent = "La hora fin debe ser mayor a la hora inicio."; return; }
-  const { error } = await sb.from("horarios_disponibilidad").insert(obj);
-  $("#dispMsg").textContent = error ? ("Error: " + error.message) : "Horario agregado.";
-  if(!error) await cargarHorarios();
+  if(calState.modo === "recurrente"){
+    const existente = state.horarios.find(h=>h.ejecutivo_id===ej.id && h.dia_semana===dow);
+    panel.innerHTML = `
+      <p class="cal-panel-title">${DIAS[dow]} (se repite todas las semanas)</p>
+      <div class="cal-panel-row">
+        <input type="time" id="calHi" value="${existente?hhmm(existente.hora_inicio):'09:00'}">
+        <span class="hint">a</span>
+        <input type="time" id="calHf" value="${existente?hhmm(existente.hora_fin):'13:00'}">
+      </div>
+      <div class="cal-panel-actions">
+        <button class="btn btn-primary" id="calGuardarRec">${existente?'Actualizar':'Agregar'} horario</button>
+        ${existente?'<button class="btn-mini" id="calQuitarRec">Quitar</button>':''}
+      </div>
+      <p id="calMsgRec" class="hint" style="margin-top:.5rem"></p>`;
+
+    $("#calGuardarRec").addEventListener("click", async ()=>{
+      const hi = $("#calHi").value, hf = $("#calHf").value;
+      if(hf <= hi){ $("#calMsgRec").textContent = "La hora fin debe ser mayor a la hora inicio."; return; }
+      let error;
+      if(existente){
+        ({error} = await sb.from("horarios_disponibilidad").update({hora_inicio:hi, hora_fin:hf}).eq("id", existente.id));
+      } else {
+        ({error} = await sb.from("horarios_disponibilidad").insert({
+          ejecutivo_id: ej.id, dia_semana: dow, hora_inicio: hi, hora_fin: hf, created_by: state.user.id
+        }));
+      }
+      $("#calMsgRec").textContent = error ? ("Error: "+error.message) : "Guardado.";
+      if(!error) await cargarHorarios();
+    });
+    if(existente){
+      $("#calQuitarRec").addEventListener("click", async ()=>{
+        const { error } = await sb.from("horarios_disponibilidad").update({activo:false}).eq("id", existente.id);
+        if(error){ $("#calMsgRec").textContent = "Error: "+error.message; return; }
+        await cargarHorarios();
+      });
+    }
+  } else {
+    const exc = state.excepciones.find(x=>x.ejecutivo_id===ej.id && x.fecha===iso);
+    panel.innerHTML = `
+      <p class="cal-panel-title">${labelFecha} (solo este día)</p>
+      <div class="cal-panel-row">
+        <input type="time" id="calHi2" value="${exc && !exc.sin_disponibilidad?hhmm(exc.hora_inicio):'09:00'}">
+        <span class="hint">a</span>
+        <input type="time" id="calHf2" value="${exc && !exc.sin_disponibilidad?hhmm(exc.hora_fin):'13:00'}">
+      </div>
+      <div class="cal-panel-actions">
+        <button class="btn btn-primary" id="calGuardarExc">${exc?'Actualizar':'Agregar'} para este día</button>
+        <button class="btn-mini" id="calBloquearDia">Bloquear este día (sin disponibilidad)</button>
+        ${exc?'<button class="btn-mini" id="calQuitarExc">Quitar excepción</button>':''}
+      </div>
+      <p id="calMsgExc" class="hint" style="margin-top:.5rem"></p>
+      <p class="micro">Esto reemplaza el horario recurrente solo para ${labelFecha}, sin afectar otras semanas.</p>`;
+
+    $("#calGuardarExc").addEventListener("click", async ()=>{
+      const hi = $("#calHi2").value, hf = $("#calHf2").value;
+      if(hf <= hi){ $("#calMsgExc").textContent = "La hora fin debe ser mayor a la hora inicio."; return; }
+      const { error } = await sb.from("horarios_excepciones").upsert({
+        ejecutivo_id: ej.id, fecha: iso, hora_inicio: hi, hora_fin: hf, sin_disponibilidad: false, created_by: state.user.id
+      }, { onConflict: "ejecutivo_id,fecha" });
+      $("#calMsgExc").textContent = error ? ("Error: "+error.message) : "Guardado.";
+      if(!error) await cargarHorarios();
+    });
+    $("#calBloquearDia").addEventListener("click", async ()=>{
+      const { error } = await sb.from("horarios_excepciones").upsert({
+        ejecutivo_id: ej.id, fecha: iso, hora_inicio: null, hora_fin: null, sin_disponibilidad: true, created_by: state.user.id
+      }, { onConflict: "ejecutivo_id,fecha" });
+      $("#calMsgExc").textContent = error ? ("Error: "+error.message) : "Día bloqueado.";
+      if(!error) await cargarHorarios();
+    });
+    if(exc){
+      $("#calQuitarExc").addEventListener("click", async ()=>{
+        const { error } = await sb.from("horarios_excepciones").delete().eq("id", exc.id);
+        if(error){ $("#calMsgExc").textContent = "Error: "+error.message; return; }
+        await cargarHorarios();
+      });
+    }
+  }
+}
+
+$("#dispEjecutivoSelect").addEventListener("change", ()=>{ calState.selectedDate = null; renderCalendario(); });
+$("#calPrevBtn").addEventListener("click", ()=>{ calState.weekOffset--; calState.selectedDate = null; renderCalendario(); });
+$("#calNextBtn").addEventListener("click", ()=>{ calState.weekOffset++; calState.selectedDate = null; renderCalendario(); });
+$("#calModeRecurrente").addEventListener("click", ()=>{
+  calState.modo = "recurrente";
+  $("#calModeRecurrente").classList.add("is-active"); $("#calModeEspecifico").classList.remove("is-active");
+  renderCalendario();
 });
-
-$("#dispTable").addEventListener("click", async (e)=>{
-  const b = e.target.closest("[data-quitar]"); if(!b) return;
-  const { error } = await sb.from("horarios_disponibilidad").update({activo:false}).eq("id", b.dataset.quitar);
-  if(error){ alert("No se pudo quitar: " + error.message); return; }
-  await cargarHorarios();
+$("#calModeEspecifico").addEventListener("click", ()=>{
+  calState.modo = "especifico";
+  $("#calModeEspecifico").classList.add("is-active"); $("#calModeRecurrente").classList.remove("is-active");
+  renderCalendario();
 });
 
 // ---- Generación de slots de 2 horas disponibles para agendar ----
+// Prioridad: excepción de ese día (bloqueo o horario específico) > horario recurrente.
 function slotsDelDia(ejecutivoId, fechaStr){
-  // fechaStr en formato YYYY-MM-DD
   const fecha = new Date(fechaStr + "T00:00:00");
   const diaSemana = fecha.getDay();
-  const bloques = state.horarios.filter(h => h.ejecutivo_id === Number(ejecutivoId) && h.dia_semana === diaSemana);
+  const exc = (state.excepciones||[]).find(x => x.ejecutivo_id === Number(ejecutivoId) && x.fecha === fechaStr);
+
+  let bloques;
+  if(exc){
+    if(exc.sin_disponibilidad) return []; // día bloqueado, sin slots
+    bloques = [{ hora_inicio: exc.hora_inicio, hora_fin: exc.hora_fin }];
+  } else {
+    bloques = state.horarios.filter(h => h.ejecutivo_id === Number(ejecutivoId) && h.dia_semana === diaSemana);
+  }
+
   const ocupadas = state.citas.filter(c => c.ejecutivo_id === Number(ejecutivoId) && c.fecha === fechaStr && c.estatus !== "cancelada");
 
   const slots = [];
