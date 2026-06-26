@@ -129,34 +129,36 @@
       </div>
 
       <div class="grid-2">
-        <!-- Disponibilidad: ventas sube/edita su horario semanal -->
+        <!-- Disponibilidad: ventas sube/edita su horario con calendario -->
         <div class="card" id="cardDisponibilidad">
-          <h3 class="card-title">Mi disponibilidad semanal</h3>
+          <h3 class="card-title">Mi disponibilidad</h3>
           <p class="hint" id="dispEjecutivoHint"></p>
-          <div class="grid-2 tight">
-            <label>Día <select id="dispDia">
-              <option value="1">Lunes</option><option value="2">Martes</option><option value="3">Miércoles</option>
-              <option value="4">Jueves</option><option value="5">Viernes</option><option value="6">Sábado</option>
-              <option value="0">Domingo</option>
-            </select></label>
-            <label>&nbsp;</label>
-          </div>
-          <div class="grid-2 tight">
-            <label>Hora inicio <input type="time" id="dispInicio" value="09:00"></label>
-            <label>Hora fin <input type="time" id="dispFin" value="13:00"></label>
-          </div>
-          <button class="btn btn-primary" id="dispAddBtn">+ Agregar horario</button>
-          <p id="dispMsg" class="hint"></p>
-          <div class="table-wrap" style="margin-top:.8rem">
-            <table class="data-table" id="dispTable">
-              <thead><tr><th>Día</th><th>De</th><th>A</th><th>Quitar</th></tr></thead>
-              <tbody></tbody>
-            </table>
-          </div>
-          <p class="micro">Admin: usa el selector de ejecutivo abajo para administrar el horario de cualquiera.</p>
-          <label class="admin-only" hidden style="margin-top:.6rem">Ver/editar horario de
+          <label class="admin-only" hidden style="margin-bottom:.8rem">Ver/editar horario de
             <select id="dispEjecutivoSelect"></select>
           </label>
+
+          <div class="cal-toolbar">
+            <button class="btn-mini" id="calPrevBtn" type="button" aria-label="Semana anterior">‹</button>
+            <span id="calWeekLabel" class="cal-week-label"></span>
+            <button class="btn-mini" id="calNextBtn" type="button" aria-label="Semana siguiente">›</button>
+          </div>
+
+          <div class="cal-mode-toggle">
+            <button class="btn-mini cal-mode-btn is-active" id="calModeRecurrente" type="button">Horario recurrente</button>
+            <button class="btn-mini cal-mode-btn" id="calModeEspecifico" type="button">Día específico</button>
+          </div>
+
+          <div class="cal-grid" id="calGrid"></div>
+
+          <div class="cal-legend">
+            <span><i class="cal-dot cal-dot-recurrente"></i>Recurrente</span>
+            <span><i class="cal-dot cal-dot-especifico"></i>Específico</span>
+            <span><i class="cal-dot cal-dot-vacio"></i>Sin horario</span>
+          </div>
+
+          <div class="cal-panel" id="calPanel">
+            <p class="hint">Elige un día del calendario para agregar o quitar disponibilidad.</p>
+          </div>
         </div>
 
         <!-- Agendar cita: marketing y admin -->
