@@ -163,6 +163,7 @@ function renderEjecutivosSelects(){
 //  CALCULADORA
 // =====================================================================
 let precioPrecargado = null;
+let superficieSeleccionada = null;
 
 $("#calcLote").addEventListener("change", ()=>{
   const l = state.lotes.find(x => String(x.id) === $("#calcLote").value);
@@ -171,6 +172,7 @@ $("#calcLote").addEventListener("change", ()=>{
     $("#calcLoteNum").value = l.lote;
     $("#calcPrecio").value  = Number(l.precio).toFixed(2);
     precioPrecargado = Number(l.precio);
+    superficieSeleccionada = Number(l.superficie_m2) || null;
     $("#precioHint").textContent = "Precio de lista del lote seleccionado.";
   }
   actualizarFinanciar();
@@ -184,6 +186,7 @@ $("#calcPrecio").addEventListener("input", ()=>{
     $("#calcLoteNum").value = "LOTE POR DEFINIR";
     $("#calcLote").value = "";
     precioPrecargado = null;
+    superficieSeleccionada = null;
     $("#precioHint").textContent = "Precio modificado · el lote se definirá al elegir uno específico.";
   }
   actualizarFinanciar();
@@ -255,7 +258,7 @@ $("#calcBtn").addEventListener("click", ()=>{
 
   $("#calcResultado").innerHTML = html;
   $("#calcPdfBtn").hidden = false;
-  $("#calcPdfBtn").onclick = ()=> exportarCotizacion({precio, eng, financiar, esVersionDos, plazoAnticipado, descuentoPct, precioConDescuento, filasPDF});
+  $("#calcPdfBtn").onclick = ()=> exportarCotizacion({precio, eng, financiar, esVersionDos, plazoAnticipado, descuentoPct, precioConDescuento, filasPDF, superficie: superficieSeleccionada});
 });
 
 function exportarCotizacion(d){
@@ -263,12 +266,17 @@ function exportarCotizacion(d){
   const manzana = $("#calcManzana").value || "—";
   const loteNum = $("#calcLoteNum").value || "Por definir";
   const hoy = new Date().toLocaleDateString("es-MX",{day:"2-digit",month:"long",year:"numeric"});
+  const logoUrl = new URL("assets/logo_arbol.png", window.location.href).href;
+  const supTxt = d.superficie ? `${Number(d.superficie).toLocaleString("es-MX")} m²` : "—";
   const filas = d.filasPDF.map(f=>`<tr><td>${f.n} meses${f.sinIntereses?' sin intereses':''}</td><td style="text-align:right">${money(f.cuota)}</td></tr>`).join("");
   const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Cotización</title>
   <style>
     @page{size:Letter;margin:2cm}
     body{font-family:Arial,Helvetica,sans-serif;color:#292420;margin:0}
-    .meta{text-align:right;font-size:12px;color:#6e6557;margin-bottom:18px}
+    .head{display:flex;align-items:center;gap:14px;border-bottom:2px solid #213d2e;padding-bottom:12px;margin-bottom:16px}
+    .head img{width:46px;height:auto}
+    .head .brand{font-size:18px;font-weight:bold;color:#213d2e}
+    .meta{text-align:right;font-size:12px;color:#6e6557;margin-left:auto}
     h2{font-size:13px;text-transform:uppercase;letter-spacing:1px;color:#a8842c;margin:22px 0 8px}
     .box{background:#f6f2e9;border:1px solid #dcd4c6;border-radius:8px;padding:14px 16px;font-size:14px}
     .box div{margin-bottom:5px}
@@ -279,11 +287,16 @@ function exportarCotizacion(d){
     .foot{margin-top:24px;font-size:10px;color:#6e6557;border-top:1px solid #dcd4c6;padding-top:12px}
     .grand{font-weight:bold;color:#213d2e}
   </style></head><body>
-  <div class="meta">${hoy}</div>
+  <div class="head">
+    <img src="${logoUrl}" alt="La Purísima">
+    <div class="brand">La Purísima</div>
+    <div class="meta">${hoy}</div>
+  </div>
   <h2>Datos de la cotización</h2>
   <div class="box">
     <div><b>Cliente:</b> ${esc(cliente)}</div>
     <div><b>Lote:</b> Manzana ${esc(manzana)} · Lote ${esc(loteNum)}</div>
+    <div><b>Superficie:</b> ${supTxt}</div>
     <div><b>Precio:</b> ${money(d.precio)}</div>
     <div><b>Enganche (${d.eng}%):</b> ${money(d.precio*d.eng/100)}</div>
     <div class="grand"><b>Monto a financiar:</b> ${money(d.financiar)}</div>
@@ -297,7 +310,7 @@ function exportarCotizacion(d){
   <h2>Referencia: 12 mensualidades iguales sin intereses</h2>
   <table><thead><tr><th>Plazo</th><th>Mensualidad</th></tr></thead><tbody>${filas}</tbody></table>
   <div class="foot">
-    Referencia si decide pagar en 12 partes iguales, sin intereses, dentro del plazo de gracia. Si no liquida el saldo dentro de los 12 meses, no habrá descuento y este se financiará a 60 meses con intereses (TIIE + ${state.tasa.puntos} puntos sobre saldos insolutos), conforme al contrato. No constituye oferta vinculante. Sujeta a disponibilidad y aprobación.
+    Referencia si decide pagar en 12 partes iguales, sin intereses, dentro del plazo de gracia. Si no liquida la totalidad dentro de los 12 meses, o de que haya un retraso en dos o más mensualidades, no aplicará el descuento y el saldo que exista en ese momento se financiará automáticamente a 60 meses con intereses (TIIE + ${state.tasa.puntos} puntos sobre saldos insolutos), conforme al contrato. No constituye oferta vinculante. Sujeta a disponibilidad y aprobación.
   </div>` : `
   <h2>Opción de pago anticipado</h2>
   <div class="box">
@@ -307,7 +320,7 @@ function exportarCotizacion(d){
   <h2>Opciones de financiamiento (pagos iguales)</h2>
   <table><thead><tr><th>Plazo</th><th>Mensualidad</th></tr></thead><tbody>${filas}</tbody></table>
   <div class="foot">
-    Tasa anual estimada (TIIE ${state.tasa.tiie}% + ${state.tasa.puntos} puntos), sobre saldos insolutos. Estimación con tasa fija al valor de TIIE vigente; el contrato pacta tasa <b>variable</b>, ajustada mensualmente conforme a la TIIE publicada por Banco de México. No constituye oferta vinculante. Sujeta a disponibilidad y aprobación.
+    El descuento no aplica si no se paga la totalidad del saldo dentro de los ${d.plazoAnticipado} días; en ese caso, el saldo que exista en ese momento se financiará automáticamente conforme a las opciones de la tabla anterior, con tasa anual estimada (TIIE ${state.tasa.tiie}% + ${state.tasa.puntos} puntos), sobre saldos insolutos. Estimación con tasa fija al valor de TIIE vigente; el contrato pacta tasa <b>variable</b>, ajustada mensualmente conforme a la TIIE publicada por Banco de México. No constituye oferta vinculante. Sujeta a disponibilidad y aprobación.
   </div>`}
   </body></html>`;
   imprimirHTML(html);
