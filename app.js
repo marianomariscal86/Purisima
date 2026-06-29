@@ -193,37 +193,69 @@ $("#calcEnganche").addEventListener("input", actualizarFinanciar);
 
 function actualizarFinanciar(){
   const precio = parseMoney($("#calcPrecio").value);
-  const eng = Math.min(100, Math.max(0, Number($("#calcEnganche").value)||0));
+  const eng = Math.min(100, Math.max(20, Number($("#calcEnganche").value)||20));
   $("#calcFinanciar").value = money(precio * (1 - eng/100));
 }
 
 $("#calcBtn").addEventListener("click", ()=>{
   const precio = parseMoney($("#calcPrecio").value);
   if(precio <= 0){ $("#calcResultado").innerHTML = '<div class="result-empty">Ingresa un precio válido.</div>'; return; }
-  const eng = Math.min(100, Math.max(0, Number($("#calcEnganche").value)||0));
+  const eng = Math.min(100, Math.max(20, Number($("#calcEnganche").value)||20));
   const financiar = precio * (1 - eng/100);
-  const tasaAnual = (Number(state.tasa.tiie) + Number(state.tasa.puntos)) / 100;
-  const i = tasaAnual / 12;
-  const plazos = [12,24,36,48,60];
+  const esVersionDos = eng >= 50; // 50%+ enganche → 12 meses sin intereses para liquidar, con 15% si paga a tiempo
+  const plazoAnticipado = esVersionDos ? 12 : 90; // en meses para v2, en días para v1
+  const descuentoPct = 15;
+  const precioConDescuento = precio * (1 - descuentoPct/100);
 
-  let rows = "";
   const filasPDF = [];
-  plazos.forEach(n=>{
-    const cuota = i > 0 ? financiar * i / (1 - Math.pow(1+i, -n)) : financiar / n;
-    const total = cuota * n;
-    rows += `<tr><td class="plazo">${n} meses</td><td class="mens">${money(cuota)}</td></tr>`;
-    filasPDF.push({n, cuota, total});
-  });
+  let html;
 
-  $("#calcResultado").innerHTML = `
-    <table class="cuotas">
-      <thead><tr><th>Plazo</th><th>Mensualidad</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-    <p class="hint">Monto a financiar ${money(financiar)} · tasa anual ${(tasaAnual*100).toFixed(2)}% (TIIE ${state.tasa.tiie}% + ${state.tasa.puntos}).</p>`;
+  if(esVersionDos){
+    // Condición de pago: 50% enganche + 12 meses sin intereses para liquidar el saldo.
+    // Se muestra además la tabla de 12 mensualidades iguales como referencia, por si decide pagar en partes.
+    const cuota12 = financiar / 12;
+    html = `
+      <div class="cuota-destacada">
+        <p class="hint" style="margin:0 0 .3rem">Enganche ${eng}% · saldo restante ${money(financiar)}</p>
+        <p class="mens" style="font-size:18px">12 meses sin intereses para liquidar el saldo</p>
+        <p class="hint" style="margin:.4rem 0 0">Si liquida la totalidad dentro de esos 12 meses: <b>${money(precioConDescuento)}</b> (${descuentoPct}% de descuento sobre el precio total).</p>
+      </div>
+      <table class="cuotas">
+        <thead><tr><th>Plazo</th><th>Mensualidad</th></tr></thead>
+        <tbody><tr><td class="plazo">12 meses sin intereses</td><td class="mens">${money(cuota12)}</td></tr></tbody>
+      </table>
+      <p class="hint">Referencia si decide pagar en 12 partes iguales, sin intereses, dentro del plazo de gracia.</p>
+      <p class="micro">Si no liquida el saldo dentro de los 12 meses, este se financiará a 60 meses con intereses (TIIE + ${state.tasa.puntos} puntos), conforme al contrato.</p>`;
+    filasPDF.push({n:12, cuota:cuota12, total:cuota12*12, sinIntereses:true});
+  } else {
+    // ---- Opción de pago anticipado (90 días, 15%) ----
+    html = `
+      <div class="cuota-destacada">
+        <p class="hint" style="margin:0 0 .3rem">Pagando el saldo total en ${plazoAnticipado} días</p>
+        <p class="mens" style="font-size:20px">${money(precioConDescuento)} <span class="hint">(${descuentoPct}% de descuento sobre el precio total)</span></p>
+      </div>`;
 
+    const tasaAnual = (Number(state.tasa.tiie) + Number(state.tasa.puntos)) / 100;
+    const i = tasaAnual / 12;
+    const plazos = [12,24,36,48,60];
+    let rows = "";
+    plazos.forEach(n=>{
+      const cuota = i > 0 ? financiar * i / (1 - Math.pow(1+i, -n)) : financiar / n;
+      const total = cuota * n;
+      rows += `<tr><td class="plazo">${n} meses</td><td class="mens">${money(cuota)}</td></tr>`;
+      filasPDF.push({n, cuota, total});
+    });
+    html += `
+      <table class="cuotas">
+        <thead><tr><th>Plazo</th><th>Mensualidad</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <p class="hint">Monto a financiar ${money(financiar)} · tasa anual ${(tasaAnual*100).toFixed(2)}% (TIIE ${state.tasa.tiie}% + ${state.tasa.puntos}).</p>`;
+  }
+
+  $("#calcResultado").innerHTML = html;
   $("#calcPdfBtn").hidden = false;
-  $("#calcPdfBtn").onclick = ()=> exportarCotizacion({precio, eng, financiar, tasaAnual, filasPDF});
+  $("#calcPdfBtn").onclick = ()=> exportarCotizacion({precio, eng, financiar, esVersionDos, plazoAnticipado, descuentoPct, precioConDescuento, filasPDF});
 });
 
 function exportarCotizacion(d){
@@ -231,7 +263,7 @@ function exportarCotizacion(d){
   const manzana = $("#calcManzana").value || "—";
   const loteNum = $("#calcLoteNum").value || "Por definir";
   const hoy = new Date().toLocaleDateString("es-MX",{day:"2-digit",month:"long",year:"numeric"});
-  const filas = d.filasPDF.map(f=>`<tr><td>${f.n} meses</td><td style="text-align:right">${money(f.cuota)}</td></tr>`).join("");
+  const filas = d.filasPDF.map(f=>`<tr><td>${f.n} meses${f.sinIntereses?' sin intereses':''}</td><td style="text-align:right">${money(f.cuota)}</td></tr>`).join("");
   const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Cotización</title>
   <style>
     @page{size:Letter;margin:2cm}
@@ -256,12 +288,27 @@ function exportarCotizacion(d){
     <div><b>Enganche (${d.eng}%):</b> ${money(d.precio*d.eng/100)}</div>
     <div class="grand"><b>Monto a financiar:</b> ${money(d.financiar)}</div>
   </div>
+  ${d.esVersionDos ? `
+  <h2>Condición de pago</h2>
+  <div class="box">
+    <div>Plazo de 12 meses sin intereses para liquidar el saldo de ${money(d.financiar)}.</div>
+    <div class="grand">Si liquida la totalidad dentro de esos 12 meses: ${money(d.precioConDescuento)} (${d.descuentoPct}% de descuento sobre el precio total).</div>
+  </div>
+  <h2>Referencia: 12 mensualidades iguales sin intereses</h2>
+  <table><thead><tr><th>Plazo</th><th>Mensualidad</th></tr></thead><tbody>${filas}</tbody></table>
+  <div class="foot">
+    Referencia si decide pagar en 12 partes iguales, sin intereses, dentro del plazo de gracia. Si no liquida el saldo dentro de los 12 meses, este se financiará a 60 meses con intereses (TIIE + ${state.tasa.puntos} puntos sobre saldos insolutos), conforme al contrato. No constituye oferta vinculante. Sujeta a disponibilidad y aprobación.
+  </div>` : `
+  <h2>Opción de pago anticipado</h2>
+  <div class="box">
+    <div class="grand">Pagando el saldo total en ${d.plazoAnticipado} días: ${money(d.precioConDescuento)}</div>
+    <div>(${d.descuentoPct}% de descuento sobre el precio total, definitivo y liquidatorio)</div>
+  </div>
   <h2>Opciones de financiamiento (pagos iguales)</h2>
   <table><thead><tr><th>Plazo</th><th>Mensualidad</th></tr></thead><tbody>${filas}</tbody></table>
   <div class="foot">
-    Tasa anual estimada ${(d.tasaAnual*100).toFixed(2)}% (TIIE ${state.tasa.tiie}% + ${state.tasa.puntos} puntos), sobre saldos insolutos.
-    Estimación con tasa fija al valor de TIIE vigente; el contrato pacta tasa <b>variable</b>, ajustada mensualmente conforme a la TIIE publicada por Banco de México. No constituye oferta vinculante. Sujeta a disponibilidad y aprobación.
-  </div>
+    Tasa anual estimada (TIIE ${state.tasa.tiie}% + ${state.tasa.puntos} puntos), sobre saldos insolutos. Estimación con tasa fija al valor de TIIE vigente; el contrato pacta tasa <b>variable</b>, ajustada mensualmente conforme a la TIIE publicada por Banco de México. No constituye oferta vinculante. Sujeta a disponibilidad y aprobación.
+  </div>`}
   </body></html>`;
   imprimirHTML(html);
 }
@@ -668,15 +715,24 @@ $("#ctLote").addEventListener("change", ()=>{
   resumenContrato();
 });
 $("#ctPrecio").addEventListener("input", resumenContrato);
+$("#ctEnganche").addEventListener("input", resumenContrato);
 
 function resumenContrato(){
   const p = parseMoney($("#ctPrecio").value);
-  if(p>0) $("#ctResumen").innerHTML = `Precio ${money(p)} · enganche 20% ${money(p*0.20)} · saldo ${money(p*0.80)}.`;
-  else $("#ctResumen").textContent = "Selecciona un lote y captura el precio.";
+  const eng = Math.min(100, Math.max(20, Number($("#ctEnganche").value)||20));
+  $("#ctEnganche").value = eng;
+  if(p>0){
+    const esVersionDos = eng >= 50;
+    const version = esVersionDos ? "Versión 365 días / 12 meses sin intereses para liquidar" : "Versión 90 días / 60 meses TIIE+8";
+    $("#ctResumen").innerHTML = `Precio ${money(p)} · enganche ${eng}% ${money(p*eng/100)} · saldo ${money(p*(1-eng/100))} · <b>${version}</b>.`;
+  } else {
+    $("#ctResumen").textContent = "Selecciona un lote y captura el precio.";
+  }
 }
 
 $("#ctGenerarBtn").addEventListener("click", ()=>{
   const precio = parseMoney($("#ctPrecio").value);
+  const engPct = Math.min(100, Math.max(20, Number($("#ctEnganche").value)||20));
   if(!$("#ctNombre").value.trim() || precio<=0){
     alert("Captura el nombre del comprador y un precio válido."); return;
   }
@@ -696,7 +752,7 @@ $("#ctGenerarBtn").addEventListener("click", ()=>{
     nombre: $("#ctNombre").value.trim(), nacionalidad: $("#ctNac").value.trim(),
     domicilio_comprador: $("#ctDom").value.trim(), correo: $("#ctCorreo").value.trim(), rfc: $("#ctRfc").value.trim(),
     manzana: $("#ctManzana").value, lote: $("#ctLoteNum").value, calle: $("#ctCalle").value,
-    superficie_m2: $("#ctSup").value, precio: precio
+    superficie_m2: $("#ctSup").value, precio: precio, enganche_pct: engPct
   };
   imprimirHTML(construirContratoHTML(data));
 });
