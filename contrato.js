@@ -65,7 +65,9 @@ function numeroALetras(num){
 function construirContratoHTML(d){
   const v = (x, ph) => (x && String(x).trim()) ? x : `<span class="ph">[${ph}]</span>`;
   const precio = Number(d.precio) || 0;
-  const enganche = precio * 0.20;
+  const engPct = Number(d.enganche_pct) || 20;
+  const enganche = precio * (engPct / 100);
+  const esVersionDosFinal = engPct >= 50; // 50%+ → plazo de gracia de 365 días (en vez de 90) para el 15% de descuento
   const precioLetra = numeroALetras(precio);
   const engancheLetra = numeroALetras(enganche);
   const fmt = n => "$" + (Number(n)||0).toLocaleString("es-MX",{minimumFractionDigits:2, maximumFractionDigits:2});
@@ -137,9 +139,12 @@ function construirContratoHTML(d){
 
   <p class="cl"><b>Segunda. Precio y Forma de Pago.</b></p>
   <p>a) El precio total es de ${fmt(precio)} pesos M.N. (${precioLetra}).</p>
-  <p>b) “LA PROMITENTE COMPRADORA” pagará un enganche del 20% del precio total, equivalente a ${fmt(enganche)} pesos M.N. (${engancheLetra}), al momento de la firma de este contrato.</p>
-  <p>c) Si “LA PROMITENTE COMPRADORA” paga la totalidad del saldo pendiente después de descontar el enganche en un plazo de 90 (noventa) días naturales contados a partir de la firma, se aplicará un descuento del 10% sobre el precio total, el cual será definitivo y liquidatorio.</p>
-  <p>d) En caso de no pagar la totalidad en el plazo señalado, el saldo se financiará en 60 (sesenta) pagos mensuales consecutivos, con una tasa de interés variable equivalente a la Tasa de Interés Interbancaria de Equilibrio (TIIE) a 28 días publicada por el Banco de México, más 8 (ocho) puntos porcentuales sobre saldos insolutos. La tasa se ajustará mensualmente conforme a la publicación oficial de la TIIE. En caso de dejar de publicarse la TIIE, se aplicará la Tasa Sustituta definida en este contrato. El Primer Pago será el primer día del mes siguiente al término del plazo de los 90 días, y el último pago se realizará al cumplimiento de los 60 meses.</p>
+  <p>b) “LA PROMITENTE COMPRADORA” pagará un enganche del ${engPct}% del precio total, equivalente a ${fmt(enganche)} pesos M.N. (${engancheLetra}), al momento de la firma de este contrato.</p>
+  ${esVersionDosFinal ? `
+  <p>c) Si “LA PROMITENTE COMPRADORA” paga la totalidad del saldo pendiente después de descontar el enganche en un plazo de 365 (trescientos sesenta y cinco) días naturales contados a partir de la firma, se aplicará un descuento del 15% sobre el precio total, el cual será definitivo y liquidatorio.</p>
+  <p>d) En caso de no pagar la totalidad en el plazo señalado, el saldo se financiará en 60 (sesenta) pagos mensuales consecutivos, con una tasa de interés variable equivalente a la Tasa de Interés Interbancaria de Equilibrio (TIIE) a 28 días publicada por el Banco de México, más 8 (ocho) puntos porcentuales sobre saldos insolutos. La tasa se ajustará mensualmente conforme a la publicación oficial de la TIIE. En caso de dejar de publicarse la TIIE, se aplicará la Tasa Sustituta definida en este contrato. El Primer Pago será el primer día del mes siguiente al término del plazo de los 365 días, y el último pago se realizará al cumplimiento de los 60 meses.</p>` : `
+  <p>c) Si “LA PROMITENTE COMPRADORA” paga la totalidad del saldo pendiente después de descontar el enganche en un plazo de 90 (noventa) días naturales contados a partir de la firma, se aplicará un descuento del 15% sobre el precio total, el cual será definitivo y liquidatorio.</p>
+  <p>d) En caso de no pagar la totalidad en el plazo señalado, el saldo se financiará en 60 (sesenta) pagos mensuales consecutivos, con una tasa de interés variable equivalente a la Tasa de Interés Interbancaria de Equilibrio (TIIE) a 28 días publicada por el Banco de México, más 8 (ocho) puntos porcentuales sobre saldos insolutos. La tasa se ajustará mensualmente conforme a la publicación oficial de la TIIE. En caso de dejar de publicarse la TIIE, se aplicará la Tasa Sustituta definida en este contrato. El Primer Pago será el primer día del mes siguiente al término del plazo de los 90 días, y el último pago se realizará al cumplimiento de los 60 meses.</p>`}
   <p>e) Todos los pagos se realizarán mediante transferencia bancaria a la cuenta ${v(d.clabe,"CLABE")} en ${v(d.banco,"BANCO")}, a nombre de ${v(d.razon_social,"RAZÓN SOCIAL")}, o en su defecto, en el domicilio de “LA PROMITENTE VENDEDORA” señalado en este contrato.</p>
   <p>f) No habrá penalizaciones por pagos anticipados.</p>
 
