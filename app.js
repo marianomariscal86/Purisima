@@ -204,7 +204,7 @@ $("#calcBtn").addEventListener("click", ()=>{
   const financiar = precio * (1 - eng/100);
   const esVersionDos = eng >= 50; // 50%+ enganche → 12 meses sin intereses para liquidar, con 15% si paga a tiempo
   const plazoAnticipado = esVersionDos ? 12 : 90; // en meses para v2, en días para v1
-  const descuentoPct = 15;
+  const descuentoPct = esVersionDos ? 10 : 15;
   const precioConDescuento = precio * (1 - descuentoPct/100);
 
   const filasPDF = [];
