@@ -263,15 +263,24 @@ $("#calcPrecio").addEventListener("input", ()=>{
   actualizarFinanciar();
 });
 
+// Al escribir: solo actualiza el financiar sin forzar el clamp (para no interferir mientras escribe)
 $("#calcEnganche").addEventListener("input", actualizarFinanciar);
+// Al salir del campo: sí aplica el clamp (20-100) y corrige si se fue de rango
+$("#calcEnganche").addEventListener("blur", ()=>{
+  const raw = Number($("#calcEnganche").value);
+  if(isNaN(raw) || raw < 20) $("#calcEnganche").value = 20;
+  else if(raw > 100) $("#calcEnganche").value = 100;
+  actualizarFinanciar();
+});
 
 function actualizarFinanciar(){
   const precio = parseMoney($("#calcPrecio").value);
-  const eng = Math.min(100, Math.max(20, Number($("#calcEnganche").value)||20));
+  const raw = Number($("#calcEnganche").value);
+  // Mientras el campo está vacío o incompleto al escribir, no calculamos
+  if(!raw || raw < 1) return;
+  const eng = Math.min(100, Math.max(20, raw));
   $("#calcFinanciar").value = money(precio * (1 - eng/100));
-  // Si ya había un resultado calculado, lo invalidamos: cambiar enganche/precio
-  // puede cambiar de versión (90 días/15% vs 12 meses/10%) y el PDF viejo
-  // ya no correspondería a lo que se ve en pantalla.
+  // Si ya había un resultado calculado, lo invalidamos
   if(!$("#calcResultado").classList.contains("result-empty")){
     $("#calcResultado").innerHTML = '<div class="result-empty">Los datos cambiaron — presiona <b>Calcular</b> de nuevo.</div>';
     $("#calcPdfBtn").hidden = true;
