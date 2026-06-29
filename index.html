@@ -1,86 +1,361 @@
-// =====================================================================
-//  Edge Function: tiie-fetch
-//  Consulta la TIIE 28 días vigente directo de Banxico (API SIE) y la
-//  guarda en la tabla tasa_config. El token de Banxico se guarda como
-//  "secret" del proyecto (BANXICO_TOKEN) — nunca queda expuesto en el
-//  código del front-end ni en GitHub.
-//  Solo usuarios con rol 'admin' pueden ejecutarla (se valida su JWT).
-// =====================================================================
-import { createClient } from "jsr:@supabase/supabase-js@2";
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>La Purísima · Ventas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
 
-const SERIE_TIIE_28 = "SF60648";
+<!-- ===================== PANTALLA DE ACCESO ===================== -->
+<div id="login" class="login-wrap">
+  <div class="login-card">
+    <img src="assets/logo_arbol.png" alt="La Purísima" class="crest-logo">
+    <p class="eyebrow">Fraccionamiento Residencial Turístico</p>
+    <h1 class="brand">La Purísima</h1>
+    <div class="rule"></div>
+    <p class="login-sub">Acceso para el equipo de ventas y marketing</p>
+    <form id="loginForm" autocomplete="on">
+      <label>Correo
+        <input type="email" id="email" required autocomplete="username" placeholder="nombre@correo.com">
+      </label>
+      <label>Contraseña
+        <input type="password" id="password" required autocomplete="current-password" placeholder="••••••••">
+      </label>
+      <button type="submit" class="btn btn-primary" id="loginBtn">Entrar</button>
+      <p id="loginError" class="error" role="alert"></p>
+    </form>
+  </div>
+  <p class="login-foot">Ixtlahuaca, Estado de México · Acceso restringido</p>
+</div>
 
-Deno.serve(async (req) => {
-  const cors = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  };
-  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+<!-- ===================== APLICACIÓN ===================== -->
+<div id="app" class="app" hidden>
+  <header class="topbar">
+    <div class="topbar-brand">
+      <img src="assets/logo_arbol.png" alt="La Purísima" class="crest-logo-sm">
+      <div>
+        <span class="topbar-title">La Purísima</span>
+        <span class="topbar-sub">Plataforma de ventas</span>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button class="tab is-active" data-tab="calculadora">Calculadora</button>
+      <button class="tab" data-tab="lotes">Lista de precios</button>
+      <button class="tab" data-tab="citas">Citas</button>
+      <button class="tab" data-tab="contrato">Contrato</button>
+      <button class="tab" data-tab="masterplan">Masterplan</button>
+      <button class="tab admin-only" data-tab="ajustes" hidden>Ajustes</button>
+    </nav>
+    <div class="topbar-user">
+      <span id="userBadge" class="badge"></span>
+      <button id="logoutBtn" class="btn btn-ghost">Salir</button>
+    </div>
+  </header>
 
-  try {
-    // ---- Verifica que quien llama esté autenticado y sea admin ----
-    const authHeader = req.headers.get("Authorization") || "";
-    const callerClient = createClient(
-      Deno.env.get("SUPABASE_URL"),
-      Deno.env.get("SUPABASE_ANON_KEY"),
-      { global: { headers: { Authorization: authHeader } } }
-    );
-    const { data: { user }, error: authError } = await callerClient.auth.getUser();
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: "No autenticado." }),
-        { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
-    }
-    const { data: perfil } = await callerClient.from("profiles").select("role").eq("id", user.id).single();
-    if (!perfil || perfil.role !== "admin") {
-      return new Response(JSON.stringify({ error: "Solo un administrador puede actualizar la TIIE manualmente." }),
-        { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
-    }
+  <main class="content">
 
-    const banxicoToken = Deno.env.get("BANXICO_TOKEN");
-    if (!banxicoToken) {
-      return new Response(JSON.stringify({ error: "Falta configurar el secreto BANXICO_TOKEN en Supabase." }),
-        { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
-    }
+    <!-- ============ CALCULADORA ============ -->
+    <section id="tab-calculadora" class="panel">
+      <div class="panel-head">
+        <h2>Calculadora de pagos</h2>
+        <p class="panel-desc">Cotización a 12, 24, 36, 48 y 60 mensualidades iguales · tasa TIIE + <span id="puntosLbl">8</span> puntos.</p>
+      </div>
 
-    // Consulta el dato más reciente publicado de la TIIE 28 días.
-    const url = `https://www.banxico.org.mx/SieAPIRest/service/v1/series/${SERIE_TIIE_28}/datos/oportuno`;
-    const resp = await fetch(url, { headers: { "Bmx-Token": banxicoToken, "Accept": "application/json" } });
-    if (!resp.ok) {
-      const txt = await resp.text();
-      return new Response(JSON.stringify({ error: `Banxico respondió ${resp.status}: ${txt}` }),
-        { status: 502, headers: { ...cors, "Content-Type": "application/json" } });
-    }
-    const json = await resp.json();
-    const serie = json?.bmx?.series?.[0];
-    const dato = serie?.datos?.[0];
-    if (!dato) {
-      return new Response(JSON.stringify({ error: "Banxico no devolvió datos para la serie." }),
-        { status: 502, headers: { ...cors, "Content-Type": "application/json" } });
-    }
+      <div class="grid-2">
+        <div class="card">
+          <h3 class="card-title">Datos de la cotización</h3>
+          <label>Cotizado a nombre de
+            <input type="text" id="calcCliente" placeholder="Nombre del cliente">
+          </label>
+          <label>Lote disponible
+            <select id="calcLote"><option value="">— Elegir lote disponible —</option></select>
+          </label>
+          <div class="grid-2 tight">
+            <label>Manzana <input type="text" id="calcManzana" readonly></label>
+            <label>Lote <input type="text" id="calcLoteNum" readonly></label>
+          </div>
+          <label>Precio (MXN)
+            <input type="text" id="calcPrecio" inputmode="numeric" placeholder="0.00">
+            <span class="hint" id="precioHint"></span>
+          </label>
+          <div class="grid-2 tight">
+            <label>Enganche (%) <input type="number" id="calcEnganche" min="20" max="100" step="1" value="35"></label>
+            <label>A financiar <input type="text" id="calcFinanciar" readonly></label>
+          </div>
+          <button class="btn btn-primary" id="calcBtn">Calcular</button>
+        </div>
 
-    const tiie = parseFloat(dato.dato.replace(",", "."));
-    const fecha = dato.fecha; // formato DD/MM/AAAA
+        <div class="card card-result">
+          <h3 class="card-title">Mensualidades estimadas</h3>
+          <div id="calcResultado" class="result-empty">Ingresa o elige un lote y presiona <b>Calcular</b>.</div>
+          <button class="btn btn-secondary" id="calcPdfBtn" hidden>Exportar cotización (PDF)</button>
+          <p class="micro">Estimación con tasa fija al valor de TIIE vigente. El contrato pacta tasa variable, ajustada mensualmente conforme a la TIIE publicada por Banxico.</p>
+        </div>
+      </div>
+    </section>
 
-    // Guarda el valor en tasa_config (id=1) usando la service_role (solo disponible aquí, en el servidor).
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL"),
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
-    );
-    const { error } = await supabase
-      .from("tasa_config")
-      .update({ tiie, tiie_fecha: fecha, tiie_auto: true, updated_at: new Date().toISOString() })
-      .eq("id", 1);
+    <!-- ============ LISTA DE PRECIOS ============ -->
+    <section id="tab-lotes" class="panel" hidden>
+      <div class="panel-head row">
+        <div>
+          <h2>Lista de precios</h2>
+          <p class="panel-desc">Disponibilidad de lotes del fraccionamiento.</p>
+        </div>
+        <button class="btn btn-primary admin-only" id="nuevoLoteBtn" hidden>+ Nuevo lote</button>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="lotesTable">
+          <thead>
+            <tr>
+              <th>Mz</th><th>Lote</th><th>Calle</th><th>Sup. (m²)</th>
+              <th>Precio</th><th>Estatus</th><th>Plano</th><th class="admin-only" hidden>Acciones</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
 
-    if (error) {
-      return new Response(JSON.stringify({ error: `Error guardando en Supabase: ${error.message}` }),
-        { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
-    }
+    <!-- ============ CITAS ============ -->
+    <section id="tab-citas" class="panel" hidden>
+      <div class="panel-head">
+        <h2>Citas con clientes</h2>
+        <p class="panel-desc">Ventas publica su disponibilidad · Marketing agenda citas de 2 horas dentro de esos horarios.</p>
+      </div>
 
-    return new Response(JSON.stringify({ ok: true, tiie, fecha }),
-      { headers: { ...cors, "Content-Type": "application/json" } });
+      <div class="grid-2">
+        <!-- Disponibilidad: ventas sube/edita su horario con calendario -->
+        <div class="card" id="cardDisponibilidad">
+          <h3 class="card-title">Mi disponibilidad</h3>
+          <p class="hint" id="dispEjecutivoHint"></p>
+          <label class="admin-only" hidden style="margin-bottom:.8rem">Ver/editar horario de
+            <select id="dispEjecutivoSelect"></select>
+          </label>
 
-  } catch (e) {
-    return new Response(JSON.stringify({ error: String(e) }),
-      { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
-  }
-});
+          <div class="cal-toolbar">
+            <button class="btn-mini" id="calPrevBtn" type="button" aria-label="Semana anterior">‹</button>
+            <span id="calWeekLabel" class="cal-week-label"></span>
+            <button class="btn-mini" id="calNextBtn" type="button" aria-label="Semana siguiente">›</button>
+          </div>
+
+          <div class="cal-mode-toggle">
+            <button class="btn-mini cal-mode-btn is-active" id="calModeRecurrente" type="button">Horario recurrente</button>
+            <button class="btn-mini cal-mode-btn" id="calModeEspecifico" type="button">Día específico</button>
+          </div>
+
+          <div class="cal-grid" id="calGrid"></div>
+
+          <div class="cal-legend">
+            <span><i class="cal-dot cal-dot-recurrente"></i>Recurrente</span>
+            <span><i class="cal-dot cal-dot-especifico"></i>Específico</span>
+            <span><i class="cal-dot cal-dot-vacio"></i>Sin horario</span>
+          </div>
+
+          <div class="cal-panel" id="calPanel">
+            <p class="hint">Elige un día del calendario para agregar o quitar disponibilidad.</p>
+          </div>
+        </div>
+
+        <!-- Agendar cita: marketing y admin -->
+        <div class="card" id="cardAgendar">
+          <h3 class="card-title">Agendar cita</h3>
+          <label>Ejecutivo de ventas
+            <select id="citaEjecutivo"><option value="">— Elegir ejecutivo —</option></select>
+          </label>
+          <label>Cliente <input type="text" id="citaNombre" placeholder="Nombre del cliente"></label>
+          <div class="grid-2 tight">
+            <label>Teléfono <input type="text" id="citaTel" placeholder="55 1234 5678"></label>
+            <label>Correo <input type="email" id="citaCorreo" placeholder="cliente@correo.com"></label>
+          </div>
+          <div class="grid-2 tight">
+            <label>Fecha <input type="date" id="citaFecha"></label>
+            <label>Origen
+              <select id="citaOrigen">
+                <option value="directo">Directo</option>
+                <option value="marketing">Marketing</option>
+                <option value="redes">Redes sociales</option>
+                <option value="referido">Referido</option>
+                <option value="portal">Portal inmobiliario</option>
+              </select>
+            </label>
+          </div>
+          <label>Horario disponible (2 horas)
+            <select id="citaSlot"><option value="">— Elige fecha y ejecutivo primero —</option></select>
+          </label>
+          <label>Notas <textarea id="citaNotas" rows="2" placeholder="Comentarios"></textarea></label>
+          <button class="btn btn-primary" id="citaBtn">Agendar cita</button>
+          <p id="citaMsg" class="hint"></p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Próximas citas</h3>
+        <div class="table-wrap">
+          <table class="data-table" id="citasTable">
+            <thead><tr><th>Fecha</th><th>Horario</th><th>Cliente</th><th>Ejecutivo</th><th>Estatus</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ CONTRATO ============ -->
+    <section id="tab-contrato" class="panel" hidden>
+      <div class="panel-head">
+        <h2>Generar contrato</h2>
+        <p class="panel-desc">Contrato privado de promesa de compraventa, listo para imprimir y firmar (PDF).</p>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <h3 class="card-title">Lote</h3>
+          <label>Seleccionar lote
+            <select id="ctLote"><option value="">— Elegir lote —</option></select>
+          </label>
+          <div class="grid-2 tight">
+            <label>Manzana <input type="text" id="ctManzana" readonly></label>
+            <label>Lote <input type="text" id="ctLoteNum" readonly></label>
+          </div>
+          <div class="grid-2 tight">
+            <label>Calle <input type="text" id="ctCalle" readonly></label>
+            <label>Superficie (m²) <input type="text" id="ctSup" readonly></label>
+          </div>
+          <p class="hint" id="ctSupHint">La superficie se toma directo del inventario (lista de precios) y no es editable aquí.</p>
+          <label>Precio total (MXN) <input type="text" id="ctPrecio" inputmode="numeric"></label>
+          <label>Enganche (%) <input type="number" id="ctEnganche" min="20" max="100" step="1" value="35"></label>
+          <label id="ctPlazoLabel">Plazo de financiamiento si no liquida a tiempo (TIIE+8)
+            <select id="ctPlazo">
+              <option value="12">12 meses</option>
+              <option value="24">24 meses</option>
+              <option value="36">36 meses</option>
+              <option value="48">48 meses</option>
+              <option value="60" selected>60 meses</option>
+            </select>
+          </label>
+          <label>Fecha de firma <input type="date" id="ctFecha"></label>
+          <button class="btn btn-secondary" id="ctVerPlanoBtn" type="button" disabled>Ver plano de esta manzana →</button>
+        </div>
+        <div class="card">
+          <h3 class="card-title">La Promitente Compradora</h3>
+          <label>Nombre completo <input type="text" id="ctNombre" placeholder="Nombre del comprador"></label>
+          <div class="grid-2 tight">
+            <label>Nacionalidad <input type="text" id="ctNac" value="mexicana"></label>
+            <label>RFC <input type="text" id="ctRfc" placeholder="RFC"></label>
+          </div>
+          <label>Domicilio <input type="text" id="ctDom" placeholder="Domicilio completo"></label>
+          <label>Correo electrónico <input type="email" id="ctCorreo" placeholder="correo@cliente.com"></label>
+        </div>
+      </div>
+      <div class="card">
+        <div class="row">
+          <div>
+            <h3 class="card-title">Resumen económico</h3>
+            <p id="ctResumen" class="hint">Selecciona un lote y captura el precio.</p>
+          </div>
+          <button class="btn btn-primary" id="ctGenerarBtn">Generar contrato (PDF)</button>
+        </div>
+        <p id="ctAviso" class="micro warn" hidden></p>
+      </div>
+    </section>
+
+    <!-- ============ AJUSTES (solo admin) ============ -->
+    <section id="tab-ajustes" class="panel" hidden>
+      <div class="panel-head"><h2>Ajustes</h2><p class="panel-desc">Solo administradores.</p></div>
+      <div class="grid-2">
+        <div class="card">
+          <h3 class="card-title">Tasa y enganche</h3>
+          <p class="hint" id="tiieAutoHint">La TIIE se actualiza automáticamente desde Banxico.</p>
+          <div class="grid-2 tight">
+            <label>TIIE 28 días (%) <input type="number" id="setTiie" step="0.0001"></label>
+            <label>Puntos (+) <input type="number" id="setPuntos" step="0.01"></label>
+          </div>
+          <label>Enganche por defecto (%) <input type="number" id="setEnganche" min="20" max="100" step="1"></label>
+          <button class="btn btn-secondary" id="actualizarTiieBtn" type="button">Actualizar TIIE ahora (Banxico)</button>
+          <button class="btn btn-primary" id="saveTasaBtn">Guardar tasa</button>
+          <p id="tasaMsg" class="hint"></p>
+        </div>
+        <div class="card">
+          <h3 class="card-title">Datos de la empresa (contrato)</h3>
+          <label>Ciudad de firma <input type="text" id="emCiudadFirma"></label>
+          <label>Razón social <input type="text" id="emRazon"></label>
+          <label>Representante legal <input type="text" id="emRep"></label>
+          <label>Domicilio de la vendedora (CDMX) <input type="text" id="emDom"></label>
+          <div class="grid-2 tight">
+            <label>Escritura constitución N° <input type="text" id="emEscNum"></label>
+            <label>Fecha <input type="text" id="emEscFecha"></label>
+          </div>
+          <div class="grid-2 tight">
+            <label>Notario constitución N° <input type="text" id="emNotNum"></label>
+            <label>Ciudad <input type="text" id="emNotCiudad"></label>
+          </div>
+          <div class="grid-2 tight">
+            <label>Escritura fideicom. N° <input type="text" id="emFidEsc"></label>
+            <label>Notario fideicom. N° <input type="text" id="emFidNotNum"></label>
+          </div>
+          <div class="grid-2 tight">
+            <label>Notario fideicom. nombre <input type="text" id="emFidNotNom"></label>
+            <label>Ciudad fideicom. <input type="text" id="emFidCiudad"></label>
+          </div>
+          <div class="grid-2 tight">
+            <label>CLABE <input type="text" id="emClabe"></label>
+            <label>Banco <input type="text" id="emBanco"></label>
+          </div>
+          <div class="grid-2 tight">
+            <label>Testigo 1 <input type="text" id="emTest1"></label>
+            <label>Testigo 2 <input type="text" id="emTest2"></label>
+          </div>
+          <button class="btn btn-primary" id="saveEmpresaBtn">Guardar datos</button>
+          <p id="empresaMsg" class="hint"></p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Ejecutivos de ventas</h3>
+        <div class="grid-2 tight">
+          <label>Nombre del nuevo ejecutivo <input type="text" id="nuevoEjecutivoNombre" placeholder="Nombre completo"></label>
+          <label>Correo del usuario a ligar (opcional)<input type="email" id="nuevoEjecutivoCorreo" placeholder="correo@ejemplo.com"></label>
+        </div>
+        <button class="btn btn-primary" id="nuevoEjecutivoBtn">+ Agregar ejecutivo</button>
+        <p id="ejecutivoMsg" class="hint"></p>
+        <div class="table-wrap" style="margin-top:.8rem">
+          <table class="data-table" id="ejecutivosTable">
+            <thead><tr><th>Nombre</th><th>Usuario ligado</th><th>Activo</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ MASTERPLAN ============ -->
+    <section id="tab-masterplan" class="panel" hidden>
+      <div class="panel-head">
+        <h2>Masterplan</h2>
+        <p class="panel-desc">Plano del fraccionamiento por manzana.</p>
+      </div>
+      <div class="card">
+        <label>Seleccionar manzana
+          <select id="mpManzana"><option value="">— Elegir manzana —</option></select>
+        </label>
+        <div id="mpVisor" class="mp-visor">
+          <p class="hint">Elige una manzana para ver su plano.</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- Cliente de Supabase -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Configuración (tus credenciales) -->
+<script src="supabase-config.js"></script>
+<!-- Plantilla del contrato + número a letras -->
+<script src="contrato.js"></script>
+<!-- Lógica de la aplicación -->
+<script src="app.js"></script>
+</body>
+</html>
