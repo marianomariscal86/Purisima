@@ -225,7 +225,7 @@ $("#calcBtn").addEventListener("click", ()=>{
         <tbody><tr><td class="plazo">12 meses sin intereses</td><td class="mens">${money(cuota12)}</td></tr></tbody>
       </table>
       <p class="hint">Referencia si decide pagar en 12 partes iguales, sin intereses, dentro del plazo de gracia.</p>
-      <p class="micro">Si no liquida el saldo dentro de los 12 meses, este se financiará a 60 meses con intereses (TIIE + ${state.tasa.puntos} puntos), conforme al contrato.</p>`;
+      <p class="micro">Si no liquida el saldo dentro de los 12 meses, no habrá descuento y este se financiará a 60 meses con intereses (TIIE + ${state.tasa.puntos} puntos), conforme al contrato.</p>`;
     filasPDF.push({n:12, cuota:cuota12, total:cuota12*12, sinIntereses:true});
   } else {
     // ---- Opción de pago anticipado (90 días, 15%) ----
@@ -297,7 +297,7 @@ function exportarCotizacion(d){
   <h2>Referencia: 12 mensualidades iguales sin intereses</h2>
   <table><thead><tr><th>Plazo</th><th>Mensualidad</th></tr></thead><tbody>${filas}</tbody></table>
   <div class="foot">
-    Referencia si decide pagar en 12 partes iguales, sin intereses, dentro del plazo de gracia. Si no liquida el saldo dentro de los 12 meses, este se financiará a 60 meses con intereses (TIIE + ${state.tasa.puntos} puntos sobre saldos insolutos), conforme al contrato. No constituye oferta vinculante. Sujeta a disponibilidad y aprobación.
+    Referencia si decide pagar en 12 partes iguales, sin intereses, dentro del plazo de gracia. Si no liquida el saldo dentro de los 12 meses, no habrá descuento y este se financiará a 60 meses con intereses (TIIE + ${state.tasa.puntos} puntos sobre saldos insolutos), conforme al contrato. No constituye oferta vinculante. Sujeta a disponibilidad y aprobación.
   </div>` : `
   <h2>Opción de pago anticipado</h2>
   <div class="box">
