@@ -90,6 +90,7 @@ input[readonly]{background:#efeadf;color:var(--piedra)}
 /* Resultado calculadora */
 .card-result{display:flex;flex-direction:column}
 .result-empty{color:var(--piedra);padding:1.2rem 0;text-align:center;font-size:14px}
+.cuota-destacada{background:#f6f2e9;border:1px solid var(--laton-soft);border-radius:8px;padding:.8rem 1rem;margin-bottom:.9rem}
 .cuotas{width:100%;border-collapse:collapse;margin-bottom:.4rem}
 .cuotas th,.cuotas td{padding:.55rem .4rem;text-align:right;border-bottom:1px solid var(--linea);font-variant-numeric:tabular-nums}
 .cuotas th{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--piedra);text-align:right}
