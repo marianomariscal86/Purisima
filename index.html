@@ -84,7 +84,7 @@
             <span class="hint" id="precioHint"></span>
           </label>
           <div class="grid-2 tight">
-            <label>Enganche (%) <input type="number" id="calcEnganche" min="0" max="100" step="1" value="20"></label>
+            <label>Enganche (%) <input type="number" id="calcEnganche" min="20" max="100" step="1" value="35"></label>
             <label>A financiar <input type="text" id="calcFinanciar" readonly></label>
           </div>
           <button class="btn btn-primary" id="calcBtn">Calcular</button>
@@ -226,6 +226,16 @@
           </div>
           <p class="hint" id="ctSupHint">La superficie se toma directo del inventario (lista de precios) y no es editable aquí.</p>
           <label>Precio total (MXN) <input type="text" id="ctPrecio" inputmode="numeric"></label>
+          <label>Enganche (%) <input type="number" id="ctEnganche" min="20" max="100" step="1" value="35"></label>
+          <label id="ctPlazoLabel">Plazo de financiamiento si no liquida a tiempo (TIIE+8)
+            <select id="ctPlazo">
+              <option value="12">12 meses</option>
+              <option value="24">24 meses</option>
+              <option value="36">36 meses</option>
+              <option value="48">48 meses</option>
+              <option value="60" selected>60 meses</option>
+            </select>
+          </label>
           <label>Fecha de firma <input type="date" id="ctFecha"></label>
           <button class="btn btn-secondary" id="ctVerPlanoBtn" type="button" disabled>Ver plano de esta manzana →</button>
         </div>
@@ -263,7 +273,7 @@
             <label>TIIE 28 días (%) <input type="number" id="setTiie" step="0.0001"></label>
             <label>Puntos (+) <input type="number" id="setPuntos" step="0.01"></label>
           </div>
-          <label>Enganche por defecto (%) <input type="number" id="setEnganche" step="1"></label>
+          <label>Enganche por defecto (%) <input type="number" id="setEnganche" min="20" max="100" step="1"></label>
           <button class="btn btn-secondary" id="actualizarTiieBtn" type="button">Actualizar TIIE ahora (Banxico)</button>
           <button class="btn btn-primary" id="saveTasaBtn">Guardar tasa</button>
           <p id="tasaMsg" class="hint"></p>
