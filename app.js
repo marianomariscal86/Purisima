@@ -43,39 +43,110 @@ function imprimirHTML(html){
 // =====================================================================
 //  AUTENTICACIÓN
 // =====================================================================
+
+// ---- Vigía anti-cuelgue de sesión ----
+// Si el token guardado en localStorage quedó corrupto/caducado de una sesión
+// anterior, el SDK de Supabase puede tardar mucho (o nunca) en resolver el
+// refresh automático, dejando la app pegada en "Entrando..." sin error visible.
+// Esta función limpia las llaves de sesión de Supabase y recarga, una sola vez,
+// si el login no resuelve en un tiempo razonable.
+function limpiarSesionLocalYRecargar(){
+  try{
+    Object.keys(localStorage).forEach(k=>{ if(k.startsWith("sb-")) localStorage.removeItem(k); });
+  }catch(e){ /* localStorage puede no estar disponible en algunos navegadores en modo privado */ }
+  const yaReintento = sessionStorage.getItem("purisima_reintento_login");
+  sessionStorage.setItem("purisima_reintento_login", "1");
+  location.reload();
+  return !yaReintento;
+}
+
 $("#loginForm").addEventListener("submit", async (e)=>{
   e.preventDefault();
   const btn = $("#loginBtn"); btn.disabled = true; btn.textContent = "Entrando…";
   $("#loginError").textContent = "";
+
+  // Vigía: si en 8 segundos no hubo respuesta, asumimos sesión local corrupta.
+  let resuelto = false;
+  const vigia = setTimeout(()=>{
+    if(resuelto) return;
+    const yaReintento = sessionStorage.getItem("purisima_reintento_login");
+    if(yaReintento){
+      // Ya reintentamos una vez automáticamente y sigue sin responder: es un
+      // problema real (de red o de Supabase), no de caché — avisamos en vez
+      // de recargar en bucle infinito.
+      btn.disabled = false; btn.textContent = "Entrar";
+      $("#loginError").textContent = "No se pudo conectar. Revisa tu internet e intenta de nuevo.";
+    } else {
+      limpiarSesionLocalYRecargar();
+    }
+  }, 8000);
+
   const { error } = await sb.auth.signInWithPassword({
     email: $("#email").value.trim(), password: $("#password").value
   });
+  resuelto = true;
+  clearTimeout(vigia);
+  sessionStorage.removeItem("purisima_reintento_login"); // login sí respondió: ya no es necesario el resguardo
   btn.disabled = false; btn.textContent = "Entrar";
   if(error) $("#loginError").textContent = "Correo o contraseña incorrectos.";
 });
 
-$("#logoutBtn").addEventListener("click", async ()=>{ await sb.auth.signOut(); location.reload(); });
+$("#logoutBtn").addEventListener("click", async ()=>{
+  await sb.auth.signOut();
+  try{ Object.keys(localStorage).forEach(k=>{ if(k.startsWith("sb-")) localStorage.removeItem(k); }); }catch(e){}
+  location.reload();
+});
 
 sb.auth.onAuthStateChange(async (_e, session)=>{
   if(session && session.user){ await iniciarSesion(session.user); }
   else { $("#login").hidden = false; $("#app").hidden = true; }
 });
 
+// Envuelve cualquier promesa con un límite de tiempo; si se pasa, la rechaza
+// en vez de dejar la app colgada para siempre esperando una respuesta que
+// nunca llega (p.ej. por un token de sesión corrupto en una llamada autenticada).
+function conTimeout(promesa, ms, etiqueta){
+  return Promise.race([
+    promesa,
+    new Promise((_, reject)=> setTimeout(()=> reject(new Error(`Tiempo de espera agotado (${etiqueta})`)), ms))
+  ]);
+}
+
 async function iniciarSesion(user){
   state.user = user;
-  // Rol del usuario
-  const { data: perfil } = await sb.from("profiles").select("role,nombre").eq("id", user.id).single();
-  state.role = perfil ? perfil.role : "ventas";
-  $("#login").hidden = true; $("#app").hidden = false;
-  $("#userBadge").textContent = (perfil && perfil.nombre ? perfil.nombre : user.email) + " · " + state.role;
-  // Mostrar/ocultar controles de admin
-  const esAdmin = state.role === "admin";
-  $$(".admin-only").forEach(el => el.hidden = !esAdmin);
-  await cargarDatos();
-  $("#ctFecha").value = new Date().toISOString().slice(0,10);
-  $("#citaFecha").value = new Date().toISOString().slice(0,10);
-  ajustarVisibilidadCitas();
-  await intentarActualizarTiieSiViejo();
+  try{
+    // Rol del usuario (con límite de tiempo: si la sesión local quedó
+    // corrupta, esta consulta autenticada puede colgarse sin error visible).
+    const { data: perfil } = await conTimeout(
+      sb.from("profiles").select("role,nombre").eq("id", user.id).single(),
+      10000, "perfil de usuario"
+    );
+    state.role = perfil ? perfil.role : "ventas";
+    $("#login").hidden = true; $("#app").hidden = false;
+    $("#userBadge").textContent = (perfil && perfil.nombre ? perfil.nombre : user.email) + " · " + state.role;
+    // Mostrar/ocultar controles de admin
+    const esAdmin = state.role === "admin";
+    $$(".admin-only").forEach(el => el.hidden = !esAdmin);
+    await conTimeout(cargarDatos(), 15000, "carga de datos");
+    $("#ctFecha").value = new Date().toISOString().slice(0,10);
+    $("#citaFecha").value = new Date().toISOString().slice(0,10);
+    ajustarVisibilidadCitas();
+    intentarActualizarTiieSiViejo(); // en segundo plano, sin bloquear la entrada
+    sessionStorage.removeItem("purisima_reintento_sesion");
+  }catch(err){
+    console.error("Error iniciando sesión:", err);
+    // Si esto fue por una sesión local corrupta, una sola limpieza+recarga
+    // automática suele resolverlo. Si ya lo intentamos, mostramos el error
+    // real en vez de recargar en bucle.
+    const yaReintento = sessionStorage.getItem("purisima_reintento_sesion");
+    if(!yaReintento){
+      sessionStorage.setItem("purisima_reintento_sesion", "1");
+      limpiarSesionLocalYRecargar();
+    } else {
+      $("#login").hidden = false; $("#app").hidden = true;
+      $("#loginError").textContent = "No se pudo cargar tu sesión (" + err.message + "). Intenta de nuevo o contacta a soporte.";
+    }
+  }
 }
 
 // Ajusta qué tarjetas de Citas se ven según el rol:
@@ -108,7 +179,7 @@ async function cargarDatos(){
     sb.from("lotes").select("*").order("manzana").order("lote"),
     sb.from("ejecutivos").select("*").order("nombre")
   ]);
-  state.tasa  = tasa.data || {tiie:6.76, puntos:8, enganche_pct:20};
+  state.tasa  = tasa.data || {tiie:6.76, puntos:8, enganche_pct:35};
   state.lotes = lotes.data || [];
   state.ejecutivos = ejecutivos.data || [];
   state.miEjecutivo = state.ejecutivos.find(e => e.user_id === state.user.id) || null;
@@ -198,6 +269,13 @@ function actualizarFinanciar(){
   const precio = parseMoney($("#calcPrecio").value);
   const eng = Math.min(100, Math.max(20, Number($("#calcEnganche").value)||20));
   $("#calcFinanciar").value = money(precio * (1 - eng/100));
+  // Si ya había un resultado calculado, lo invalidamos: cambiar enganche/precio
+  // puede cambiar de versión (90 días/15% vs 12 meses/10%) y el PDF viejo
+  // ya no correspondería a lo que se ve en pantalla.
+  if(!$("#calcResultado").classList.contains("result-empty")){
+    $("#calcResultado").innerHTML = '<div class="result-empty">Los datos cambiaron — presiona <b>Calcular</b> de nuevo.</div>';
+    $("#calcPdfBtn").hidden = true;
+  }
 }
 
 $("#calcBtn").addEventListener("click", ()=>{
@@ -377,7 +455,13 @@ async function guardarLote(id, tr){
   let res;
   if(id === "nuevo"){ res = await sb.from("lotes").insert(obj).select(); }
   else { res = await sb.from("lotes").update(obj).eq("id", id); }
-  if(res.error){ alert("No se pudo guardar: " + res.error.message); return; }
+  if(res.error){
+    const msg = res.error.message.includes("duplicate key")
+      ? `Ya existe un lote con Manzana ${obj.manzana} y Lote ${obj.lote}. Cambia el número de manzana o lote.`
+      : res.error.message;
+    alert("No se pudo guardar: " + msg);
+    return;
+  }
   await cargarDatos();
 }
 
