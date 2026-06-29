@@ -721,9 +721,10 @@ function resumenContrato(){
   const p = parseMoney($("#ctPrecio").value);
   const eng = Math.min(100, Math.max(20, Number($("#ctEnganche").value)||20));
   $("#ctEnganche").value = eng;
+  const esVersionDos = eng >= 50;
+  $("#ctPlazoLabel").hidden = esVersionDos; // el plazo de respaldo solo se elige en la versión <50% (la de 50%+ siempre es 60 meses)
   if(p>0){
-    const esVersionDos = eng >= 50;
-    const version = esVersionDos ? "Versión 365 días / 12 meses sin intereses para liquidar" : "Versión 90 días / 60 meses TIIE+8";
+    const version = esVersionDos ? "Versión 365 días / 12 mensualidades, 10% si liquida a tiempo" : "Versión 90 días, 15% si liquida a tiempo";
     $("#ctResumen").innerHTML = `Precio ${money(p)} · enganche ${eng}% ${money(p*eng/100)} · saldo ${money(p*(1-eng/100))} · <b>${version}</b>.`;
   } else {
     $("#ctResumen").textContent = "Selecciona un lote y captura el precio.";
@@ -752,7 +753,8 @@ $("#ctGenerarBtn").addEventListener("click", ()=>{
     nombre: $("#ctNombre").value.trim(), nacionalidad: $("#ctNac").value.trim(),
     domicilio_comprador: $("#ctDom").value.trim(), correo: $("#ctCorreo").value.trim(), rfc: $("#ctRfc").value.trim(),
     manzana: $("#ctManzana").value, lote: $("#ctLoteNum").value, calle: $("#ctCalle").value,
-    superficie_m2: $("#ctSup").value, precio: precio, enganche_pct: engPct
+    superficie_m2: $("#ctSup").value, precio: precio, enganche_pct: engPct,
+    plazo_meses: Number($("#ctPlazo").value) || 60
   };
   imprimirHTML(construirContratoHTML(data));
 });
