@@ -360,10 +360,14 @@ $("#calcBtn").addEventListener("click", ()=>{
     filasPDF.push({n:12, cuota:cuota12, total:cuota12*12, sinIntereses:true});
   } else {
     // ---- Opción de pago anticipado (90 días, 15%) ----
+    const engYaPagado = precio * eng / 100;
+    const complementoConDescuento = precioConDescuento - engYaPagado;
     html = `
       <div class="cuota-destacada">
         <p class="hint" style="margin:0 0 .3rem">Pagando el saldo total en ${plazoAnticipado} días</p>
         <p class="mens" style="font-size:20px">${money(precioConDescuento)} <span class="hint">(${descuentoPct}% de descuento sobre el precio total)</span></p>
+        <p class="hint" style="margin:.5rem 0 0">Enganche ya pagado: <b>${money(engYaPagado)}</b></p>
+        <p class="hint" style="margin:.2rem 0 0">Complemento a pagar en ${plazoAnticipado} días: <b>${money(complementoConDescuento)}</b></p>
       </div>`;
 
     const tasaAnual = (Number(state.tasa.tiie) + Number(state.tasa.puntos)) / 100;
@@ -448,6 +452,8 @@ function exportarCotizacion(d){
   <div class="box">
     <div class="grand">Pagando el saldo total en ${d.plazoAnticipado} días: ${money(d.precioConDescuento)}</div>
     <div>(${d.descuentoPct}% de descuento sobre el precio total, definitivo y liquidatorio)</div>
+    <div style="margin-top:6px">Enganche ya pagado: <b>${money(d.precio*d.eng/100)}</b></div>
+    <div>Complemento a pagar en ${d.plazoAnticipado} días: <b>${money(d.precioConDescuento - (d.precio*d.eng/100))}</b></div>
   </div>
   <h2>Opciones de financiamiento (pagos iguales)</h2>
   <table><thead><tr><th>Plazo</th><th>Mensualidad</th></tr></thead><tbody>${filas}</tbody></table>
