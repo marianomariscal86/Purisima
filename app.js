@@ -245,13 +245,15 @@ $("#calcLote").addEventListener("change", ()=>{
     precioPrecargado = Number(l.precio);
     superficieSeleccionada = Number(l.superficie_m2) || null;
     $("#precioHint").textContent = "Precio de lista del lote seleccionado.";
+    $("#calcDescPct").value = 0;
+    $("#calcPrecioFinal").value = Number(l.precio).toFixed(2);
   }
   actualizarFinanciar();
 });
 
 $("#calcPrecio").addEventListener("input", ()=>{
   const val = parseMoney($("#calcPrecio").value);
-  // Si el precio se modifica respecto al de lista, el lote queda "POR DEFINIR"
+  // Si el precio de lista se modifica respecto al de lista, el lote queda "POR DEFINIR"
   if(precioPrecargado !== null && Math.abs(val - precioPrecargado) > 0.5){
     $("#calcManzana").value = "—";
     $("#calcLoteNum").value = "LOTE POR DEFINIR";
@@ -260,8 +262,33 @@ $("#calcPrecio").addEventListener("input", ()=>{
     superficieSeleccionada = null;
     $("#precioHint").textContent = "Precio modificado · el lote se definirá al elegir uno específico.";
   }
-  actualizarFinanciar();
+  // Reaplica el % de descuento actual sobre el nuevo precio de lista
+  aplicarDescuentoPct();
 });
+
+// ---- Descuento comercial: % ⇄ precio final, sincronizados, tope 10% ----
+function aplicarDescuentoPct(){
+  const listaPrecio = parseMoney($("#calcPrecio").value);
+  let pct = Number($("#calcDescPct").value) || 0;
+  pct = Math.min(10, Math.max(0, pct));
+  $("#calcDescPct").value = pct;
+  $("#calcPrecioFinal").value = (listaPrecio * (1 - pct/100)).toFixed(2);
+  actualizarFinanciar();
+}
+function aplicarDescuentoPrecioFinal(){
+  const listaPrecio = parseMoney($("#calcPrecio").value);
+  if(listaPrecio <= 0) return;
+  let final = parseMoney($("#calcPrecioFinal").value);
+  const minimoPermitido = listaPrecio * 0.90; // tope de 10% de descuento
+  if(final < minimoPermitido) final = minimoPermitido;
+  if(final > listaPrecio) final = listaPrecio; // no se permite "premium" aquí, solo descuento
+  $("#calcPrecioFinal").value = final.toFixed(2);
+  const pct = listaPrecio > 0 ? ((listaPrecio - final) / listaPrecio) * 100 : 0;
+  $("#calcDescPct").value = Math.round(pct * 10) / 10;
+  actualizarFinanciar();
+}
+$("#calcDescPct").addEventListener("input", aplicarDescuentoPct);
+$("#calcPrecioFinal").addEventListener("input", aplicarDescuentoPrecioFinal);
 
 // Al escribir: solo actualiza el financiar sin forzar el clamp (para no interferir mientras escribe)
 $("#calcEnganche").addEventListener("input", actualizarFinanciar);
@@ -274,22 +301,36 @@ $("#calcEnganche").addEventListener("blur", ()=>{
 });
 
 function actualizarFinanciar(){
-  const precio = parseMoney($("#calcPrecio").value);
+  const precioLote = parseMoney($("#calcPrecioFinal").value) || parseMoney($("#calcPrecio").value);
   const raw = Number($("#calcEnganche").value);
   // Mientras el campo está vacío o incompleto al escribir, no calculamos
   if(!raw || raw < 1) return;
   const eng = Math.min(100, Math.max(20, raw));
-  $("#calcFinanciar").value = money(precio * (1 - eng/100));
+  $("#calcFinanciar").value = money(precioLote * (1 - eng/100));
   // Si ya había un resultado calculado, lo invalidamos
   if(!$("#calcResultado").classList.contains("result-empty")){
     $("#calcResultado").innerHTML = '<div class="result-empty">Los datos cambiaron — presiona <b>Calcular</b> de nuevo.</div>';
     $("#calcPdfBtn").hidden = true;
+    $("#calcResumenPrecio").hidden = true;
   }
 }
 
 $("#calcBtn").addEventListener("click", ()=>{
-  const precio = parseMoney($("#calcPrecio").value);
+  const precioLista = parseMoney($("#calcPrecio").value);
+  const precio = parseMoney($("#calcPrecioFinal").value) || precioLista; // precio del lote, ya con descuento comercial aplicado
+  const descComercialPct = Number($("#calcDescPct").value) || 0;
   if(precio <= 0){ $("#calcResultado").innerHTML = '<div class="result-empty">Ingresa un precio válido.</div>'; return; }
+
+  // Resumen de precio (lista → descuento → precio del lote) arriba del resultado
+  if(descComercialPct > 0){
+    $("#calcResumenPrecio").hidden = false;
+    $("#calcResumenPrecio").innerHTML = `
+      <p class="hint" style="margin:0 0 .3rem">Precio de lista: <b>${money(precioLista)}</b> · Descuento comercial: <b>${descComercialPct}%</b></p>
+      <p class="mens" style="font-size:18px">Precio del lote: ${money(precio)}</p>`;
+  } else {
+    $("#calcResumenPrecio").hidden = true;
+  }
+
   const eng = Math.min(100, Math.max(20, Number($("#calcEnganche").value)||20));
   const financiar = precio * (1 - eng/100);
   const esVersionDos = eng >= 50; // 50%+ enganche → 12 meses sin intereses para liquidar, con 15% si paga a tiempo
@@ -345,7 +386,7 @@ $("#calcBtn").addEventListener("click", ()=>{
 
   $("#calcResultado").innerHTML = html;
   $("#calcPdfBtn").hidden = false;
-  $("#calcPdfBtn").onclick = ()=> exportarCotizacion({precio, eng, financiar, esVersionDos, plazoAnticipado, descuentoPct, precioConDescuento, filasPDF, superficie: superficieSeleccionada});
+  $("#calcPdfBtn").onclick = ()=> exportarCotizacion({precio, precioLista, descComercialPct, eng, financiar, esVersionDos, plazoAnticipado, descuentoPct, precioConDescuento, filasPDF, superficie: superficieSeleccionada});
 });
 
 function exportarCotizacion(d){
@@ -384,7 +425,11 @@ function exportarCotizacion(d){
     <div><b>Cliente:</b> ${esc(cliente)}</div>
     <div><b>Lote:</b> Manzana ${esc(manzana)} · Lote ${esc(loteNum)}</div>
     <div><b>Superficie:</b> ${supTxt}</div>
-    <div><b>Precio:</b> ${money(d.precio)}</div>
+    ${d.descComercialPct > 0 ? `
+    <div><b>Precio de lista:</b> ${money(d.precioLista)}</div>
+    <div><b>Descuento comercial:</b> ${d.descComercialPct}%</div>
+    <div><b>Precio del lote:</b> ${money(d.precio)}</div>` : `
+    <div><b>Precio:</b> ${money(d.precio)}</div>`}
     <div><b>Enganche (${d.eng}%):</b> ${money(d.precio*d.eng/100)}</div>
     <div class="grand"><b>Monto a financiar:</b> ${money(d.financiar)}</div>
   </div>
@@ -811,6 +856,8 @@ $("#ctLote").addEventListener("change", ()=>{
     $("#ctCalle").value   = l.calle;
     $("#ctSup").value     = l.superficie_m2;   // siempre del inventario, solo lectura
     $("#ctPrecio").value  = Number(l.precio).toFixed(2);
+    $("#ctDescPct").value = 0;
+    $("#ctPrecioFinal").value = Number(l.precio).toFixed(2);
     $("#ctVerPlanoBtn").disabled = false;
     if(l.estatus === "vendido"){
       $("#ctAviso").hidden = false; $("#ctAviso").textContent = "Atención: este lote está marcado como VENDIDO.";
@@ -820,25 +867,50 @@ $("#ctLote").addEventListener("change", ()=>{
   }
   resumenContrato();
 });
-$("#ctPrecio").addEventListener("input", resumenContrato);
+
+// ---- Descuento comercial: % ⇄ precio final, sincronizados, tope 10% ----
+function ctAplicarDescuentoPct(){
+  const listaPrecio = parseMoney($("#ctPrecio").value);
+  let pct = Number($("#ctDescPct").value) || 0;
+  pct = Math.min(10, Math.max(0, pct));
+  $("#ctDescPct").value = pct;
+  $("#ctPrecioFinal").value = (listaPrecio * (1 - pct/100)).toFixed(2);
+  resumenContrato();
+}
+function ctAplicarDescuentoPrecioFinal(){
+  const listaPrecio = parseMoney($("#ctPrecio").value);
+  if(listaPrecio <= 0) return;
+  let final = parseMoney($("#ctPrecioFinal").value);
+  const minimoPermitido = listaPrecio * 0.90; // tope de 10% de descuento
+  if(final < minimoPermitido) final = minimoPermitido;
+  if(final > listaPrecio) final = listaPrecio;
+  $("#ctPrecioFinal").value = final.toFixed(2);
+  const pct = listaPrecio > 0 ? ((listaPrecio - final) / listaPrecio) * 100 : 0;
+  $("#ctDescPct").value = Math.round(pct * 10) / 10;
+  resumenContrato();
+}
+$("#ctDescPct").addEventListener("input", ctAplicarDescuentoPct);
+$("#ctPrecioFinal").addEventListener("input", ctAplicarDescuentoPrecioFinal);
 $("#ctEnganche").addEventListener("input", resumenContrato);
 
 function resumenContrato(){
-  const p = parseMoney($("#ctPrecio").value);
+  const p = parseMoney($("#ctPrecioFinal").value) || parseMoney($("#ctPrecio").value);
   const eng = Math.min(100, Math.max(20, Number($("#ctEnganche").value)||20));
   $("#ctEnganche").value = eng;
   const esVersionDos = eng >= 50;
   $("#ctPlazoLabel").hidden = esVersionDos; // el plazo de respaldo solo se elige en la versión <50% (la de 50%+ siempre es 60 meses)
   if(p>0){
     const version = esVersionDos ? "Versión 365 días / 12 mensualidades, 10% si liquida a tiempo" : "Versión 90 días, 15% si liquida a tiempo";
-    $("#ctResumen").innerHTML = `Precio ${money(p)} · enganche ${eng}% ${money(p*eng/100)} · saldo ${money(p*(1-eng/100))} · <b>${version}</b>.`;
+    const descPct = Number($("#ctDescPct").value) || 0;
+    const descTxt = descPct > 0 ? ` · descuento comercial ${descPct}%` : "";
+    $("#ctResumen").innerHTML = `Precio del lote ${money(p)}${descTxt} · enganche ${eng}% ${money(p*eng/100)} · saldo ${money(p*(1-eng/100))} · <b>${version}</b>.`;
   } else {
     $("#ctResumen").textContent = "Selecciona un lote y captura el precio.";
   }
 }
 
 $("#ctGenerarBtn").addEventListener("click", ()=>{
-  const precio = parseMoney($("#ctPrecio").value);
+  const precio = parseMoney($("#ctPrecioFinal").value) || parseMoney($("#ctPrecio").value); // precio del lote, ya con descuento comercial
   const engPct = Math.min(100, Math.max(20, Number($("#ctEnganche").value)||20));
   if(!$("#ctNombre").value.trim() || precio<=0){
     alert("Captura el nombre del comprador y un precio válido."); return;
