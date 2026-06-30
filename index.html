@@ -79,10 +79,15 @@
             <label>Manzana <input type="text" id="calcManzana" readonly></label>
             <label>Lote <input type="text" id="calcLoteNum" readonly></label>
           </div>
-          <label>Precio (MXN)
+          <label>Precio de lista (MXN)
             <input type="text" id="calcPrecio" inputmode="numeric" placeholder="0.00">
             <span class="hint" id="precioHint"></span>
           </label>
+          <div class="grid-2 tight">
+            <label>Descuento comercial (%) <input type="number" id="calcDescPct" min="0" max="10" step="0.1" value="0"></label>
+            <label>Precio del lote (MXN) <input type="text" id="calcPrecioFinal" inputmode="numeric"></label>
+          </div>
+          <p class="hint" id="calcDescHint">Descuento comercial opcional, máximo 10% sobre el precio de lista. Puedes capturar el % o directamente el precio final del lote.</p>
           <div class="grid-2 tight">
             <label>Enganche (%) <input type="number" id="calcEnganche" min="20" max="100" step="1" value="35"></label>
             <label>A financiar <input type="text" id="calcFinanciar" readonly></label>
@@ -92,6 +97,7 @@
 
         <div class="card card-result">
           <h3 class="card-title">Mensualidades estimadas</h3>
+          <div id="calcResumenPrecio" class="cuota-destacada" hidden></div>
           <div id="calcResultado" class="result-empty">Ingresa o elige un lote y presiona <b>Calcular</b>.</div>
           <button class="btn btn-secondary" id="calcPdfBtn" hidden>Exportar cotización (PDF)</button>
           <p class="micro">Estimación con tasa fija al valor de TIIE vigente. El contrato pacta tasa variable, ajustada mensualmente conforme a la TIIE publicada por Banxico.</p>
@@ -225,7 +231,12 @@
             <label>Superficie (m²) <input type="text" id="ctSup" readonly></label>
           </div>
           <p class="hint" id="ctSupHint">La superficie se toma directo del inventario (lista de precios) y no es editable aquí.</p>
-          <label>Precio total (MXN) <input type="text" id="ctPrecio" inputmode="numeric"></label>
+          <label>Precio de lista (MXN) <input type="text" id="ctPrecio" inputmode="numeric" readonly></label>
+          <div class="grid-2 tight">
+            <label>Descuento comercial (%) <input type="number" id="ctDescPct" min="0" max="10" step="0.1" value="0"></label>
+            <label>Precio del lote (MXN) <input type="text" id="ctPrecioFinal" inputmode="numeric"></label>
+          </div>
+          <p class="hint" id="ctDescHint">Descuento comercial opcional, máximo 10% sobre el precio de lista. Este es el precio que se usa para el contrato.</p>
           <label>Enganche (%) <input type="number" id="ctEnganche" min="20" max="100" step="1" value="35"></label>
           <label id="ctPlazoLabel">Plazo de financiamiento si no liquida a tiempo (TIIE+8)
             <select id="ctPlazo">
